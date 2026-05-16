@@ -61,6 +61,29 @@ python generate.py input/ --batch -m triposr         # all images, specific mode
 python generate.py --list-models
 ```
 
+### Remote workflow (DGX + laptop)
+
+Generate on the DGX, view in your local browser — one command:
+
+```bash
+# From your laptop (Mac/Linux):
+./connect.sh spark-1          # SSH host name or user@ip
+
+# This will:
+#   1. Start server.py on the DGX if not already running
+#   2. Forward port 8090 to localhost
+#   3. Open http://localhost:8090 in your browser
+#   Ctrl-C to disconnect
+
+# To stop the remote server:
+./disconnect.sh spark-1
+```
+
+You can also customize with environment variables:
+```bash
+REMOTE_HOST=dgx-station REMOTE_DIR=~/code/image-to-3d LOCAL_PORT=9090 ./connect.sh
+```
+
 ### Web server (viewer + generation API)
 
 ```bash
@@ -113,6 +136,8 @@ image-to-3d/
 ├── generate.py              # CLI: image -> .glb (multi-model)
 ├── server.py                # FastAPI server (viewer + generation API)
 ├── setup.py                 # Interactive setup wizard
+├── connect.sh               # One-command remote viewer (laptop → DGX)
+├── disconnect.sh            # Stop remote server
 ├── preprocess.py            # Background removal, centering, padding
 ├── models/
 │   ├── __init__.py          # Model registry
