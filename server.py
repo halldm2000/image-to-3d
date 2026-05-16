@@ -82,6 +82,120 @@ def api_get_output_subdir(subdir: str, filename: str):
     return FileResponse(path, media_type="model/gltf-binary", filename=filename)
 
 
+@app.get("/api/imagine/models")
+def api_imagine_models():
+    """List available text-to-image models."""
+    try:
+        from text_to_image import available_models, is_available
+        return {
+            "available": is_available(),
+            "models": available_models(),
+        }
+    except ImportError:
+        return {"available": False, "models": []}
+
+
+@app.post("/api/imagine")
+async def api_imagine(
+    prompt: str = Form(...),
+    model: str = Form("flux-schnell"),
+    steps: Optional[int] = Form(None),
+    guidance: Optional[float] = Form(None),
+    seed: Optional[int] = Form(None),
+    width: int = Form(1024),
+    height: int = Form(1024),
+    low_vram: bool = Form(False),
+    generate_3d: bool = Form(False),
+    model_3d: str = Form("hunyuan3d"),
+):
+    """Generate an image from text. Optionally chain into 3D generation."""
+    job_id = str(uuid.uuid4())[:8]
+    INPUT_DIR.mkdir(exist_ok=True)
+    OUTPUT_DIR.mkdir(exist_ok=True)
+
+    output_image = INPUT_DIR / f"{job_id}_imagined.png"
+
+    jobs[job_id] = {
+        "id": job_id,
+        "status": "queued",
+        "type": "imagine",
+        "model": model,
+        "prompt": prompt,
+        "output_image": str(output_image),
+        "created": datetime.now().isoformat(),
+        "generate_3d": generate_3d,
+        "model_3d": model_3d,
+        "error": None,
+    }
+
+    asyncio.get_event_loop().run_in_executor(
+        None, _run_imagine, job_id, prompt, output_image,
+        model, steps, guidance, seed, width, height, low_vram,
+        generate_3d, model_3d,
+    )
+
+    return {"job_id": job_id, "status": "queued"}
+
+
+@app.get("/api/imagine/image/{job_id}")
+def api_imagine_image(job_id: str):
+    """Serve a generated image."""
+    if job_id not in jobs:
+        raise HTTPException(404, "Job not found")
+    job = jobs[job_id]
+    image_path = Path(job.get("output_image", ""))
+    if not image_path.exists():
+        raise HTTPException(404, "Image not ready")
+    return FileResponse(image_path, media_type="image/png")
+
+
+def _run_imagine(job_id, prompt, output_image, model_name,
+                 steps, guidance, seed, width, height, low_vram,
+                 generate_3d, model_3d):
+    """Run text-to-image generation in a background thread."""
+    jobs[job_id]["status"] = "generating_image"
+    jobs[job_id]["started"] = datetime.now().isoformat()
+
+    try:
+        from text_to_image import generate as imagine
+
+        result = imagine(
+            prompt=prompt,
+            output_path=output_image,
+            model_name=model_name,
+            steps=steps,
+            guidance_scale=guidance,
+            seed=seed,
+            width=width,
+            height=height,
+            low_vram=low_vram,
+        )
+
+        jobs[job_id]["image_result"] = result
+        jobs[job_id]["image_ready"] = True
+
+        if not generate_3d:
+            jobs[job_id]["status"] = "complete"
+            jobs[job_id]["completed"] = datetime.now().isoformat()
+            return
+
+        jobs[job_id]["status"] = "generating_3d"
+        output_glb = OUTPUT_DIR / f"{job_id}_imagined.glb"
+        jobs[job_id]["output"] = str(output_glb)
+
+        from text_to_image import unload as unload_t2i
+        unload_t2i()
+
+        _run_generation(
+            job_id, output_image, output_glb,
+            model_3d, False, 30, 7.5, 256, None, low_vram, True,
+        )
+
+    except Exception as e:
+        jobs[job_id]["status"] = "failed"
+        jobs[job_id]["error"] = str(e)
+
+
 @app.post("/api/generate")
 async def api_generate(
     image: UploadFile = File(...),
@@ -131,8 +245,10 @@ def _run_generation(job_id, input_path, output_path,
     """Run generation in a background thread."""
     import time
 
-    jobs[job_id]["status"] = "running"
-    jobs[job_id]["started"] = datetime.now().isoformat()
+    if jobs[job_id]["status"] not in ("generating_3d",):
+        jobs[job_id]["status"] = "running"
+    if "started" not in jobs[job_id]:
+        jobs[job_id]["started"] = datetime.now().isoformat()
 
     try:
         from models import get_model

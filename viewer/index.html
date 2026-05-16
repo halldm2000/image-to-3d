@@ -96,6 +96,32 @@
 
   #gen-status { font-size: 10px; color: #666; margin-top: 4px; min-height: 14px; }
 
+  /* ── Tab switcher ─────────────────────────────────────────── */
+  .tab-bar { display: flex; gap: 2px; margin-bottom: 10px; }
+  .tab-btn {
+    flex: 1; padding: 5px 4px; border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 4px; background: rgba(255,255,255,0.02); color: #666;
+    font-size: 10px; text-align: center; cursor: pointer; transition: all 0.15s;
+  }
+  .tab-btn:hover { color: #aaa; background: rgba(255,255,255,0.05); }
+  .tab-btn.active { background: rgba(100,100,180,0.15); color: #aaf; border-color: rgba(100,100,180,0.3); }
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+
+  /* ── Imagine panel ─────────────────────────────────────────── */
+  #imagine-prompt {
+    width: 100%; padding: 6px 8px; background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.1); border-radius: 5px;
+    color: #ddd; font-size: 12px; resize: vertical; min-height: 50px;
+    font-family: inherit; margin-bottom: 6px;
+  }
+  #imagine-prompt::placeholder { color: #555; }
+  #imagine-preview {
+    display: none; margin: 8px 0; text-align: center;
+    border-radius: 6px; overflow: hidden; border: 1px solid rgba(255,255,255,0.08);
+  }
+  #imagine-preview img { max-width: 100%; display: block; }
+
   /* ── Viewport ───────────────────────────────────────────────── */
   #viewport {
     position: fixed; top: 44px; left: 240px; right: 0; bottom: 0;
@@ -195,14 +221,38 @@
 <div id="sidebar">
   <div id="generate-panel">
     <h3>Generate</h3>
-    <label class="btn" for="upload-input" style="display:block; text-align:center; margin-bottom:8px;">Upload image</label>
-    <div id="upload-preview" style="display:none; margin-bottom:8px; text-align:center;">
-      <img id="preview-img" style="max-width:100%; max-height:120px; border-radius:6px; border:1px solid rgba(255,255,255,0.1);">
+    <div class="tab-bar">
+      <div class="tab-btn active" data-tab="tab-imagine">Text to Image</div>
+      <div class="tab-btn" data-tab="tab-upload">Upload Image</div>
     </div>
-    <div class="form-row"><label>Model</label><select id="gen-model"><option value="hunyuan3d">Hunyuan3D</option><option value="triposr">TripoSR</option><option value="trellis">TRELLIS</option></select></div>
-    <div class="form-row"><label>Steps</label><input type="number" id="gen-steps" value="30" min="5" max="50"></div>
-    <button class="btn-generate" id="btn-gen" disabled>Generate 3D Model</button>
-    <div id="gen-status"></div>
+
+    <!-- Text to Image tab -->
+    <div class="tab-content active" id="tab-imagine">
+      <textarea id="imagine-prompt" placeholder="Describe an object to generate...&#10;e.g. &quot;a medieval wooden treasure chest with iron bands&quot;" rows="3"></textarea>
+      <div class="form-row"><label>Model</label><select id="imagine-model"><option value="flux-schnell">FLUX Schnell</option></select></div>
+      <div class="form-row"><label>Steps</label><input type="number" id="imagine-steps" value="4" min="1" max="50"></div>
+      <div class="form-row">
+        <label style="display:flex; align-items:center; gap:4px; width:auto;">
+          <input type="checkbox" id="imagine-also-3d" checked> Also generate 3D
+        </label>
+      </div>
+      <div class="form-row" id="imagine-3d-model-row"><label>3D Model</label><select id="imagine-3d-model"><option value="hunyuan3d">Hunyuan3D</option></select></div>
+      <div id="imagine-preview"><img id="imagine-preview-img"></div>
+      <button class="btn-generate" id="btn-imagine">Imagine</button>
+      <div id="imagine-status"></div>
+    </div>
+
+    <!-- Upload Image tab -->
+    <div class="tab-content" id="tab-upload">
+      <label class="btn" for="upload-input" style="display:block; text-align:center; margin-bottom:8px;">Upload image</label>
+      <div id="upload-preview" style="display:none; margin-bottom:8px; text-align:center;">
+        <img id="preview-img" style="max-width:100%; max-height:120px; border-radius:6px; border:1px solid rgba(255,255,255,0.1);">
+      </div>
+      <div class="form-row"><label>Model</label><select id="gen-model"><option value="hunyuan3d">Hunyuan3D</option><option value="triposr">TripoSR</option><option value="trellis">TRELLIS</option></select></div>
+      <div class="form-row"><label>Steps</label><input type="number" id="gen-steps" value="30" min="5" max="50"></div>
+      <button class="btn-generate" id="btn-gen" disabled>Generate 3D Model</button>
+      <div id="gen-status"></div>
+    </div>
   </div>
 
   <div class="sidebar-section" style="padding-bottom:4px;">
@@ -718,6 +768,135 @@ async function fetchModels() {
   }
 }
 
+// ── Tab switching ───────────────────────────────────────────────────────
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById(btn.dataset.tab).classList.add('active');
+  });
+});
+
+// ── Text-to-Image (Imagine) ─────────────────────────────────────────────
+const imagineBtn = document.getElementById('btn-imagine');
+const imaginePrompt = document.getElementById('imagine-prompt');
+const imagineStatus = document.getElementById('imagine-status');
+const imaginePreview = document.getElementById('imagine-preview');
+const imaginePreviewImg = document.getElementById('imagine-preview-img');
+const imagineAlso3d = document.getElementById('imagine-also-3d');
+const imagine3dRow = document.getElementById('imagine-3d-model-row');
+
+imagineAlso3d.addEventListener('change', () => {
+  imagine3dRow.style.display = imagineAlso3d.checked ? 'flex' : 'none';
+});
+
+imagineBtn.addEventListener('click', async () => {
+  const prompt = imaginePrompt.value.trim();
+  if (!prompt) { imagineStatus.textContent = 'Enter a prompt first'; return; }
+
+  imagineBtn.disabled = true;
+  imagineStatus.textContent = 'Generating image...';
+  imaginePreview.style.display = 'none';
+
+  const form = new FormData();
+  form.append('prompt', prompt);
+  form.append('model', document.getElementById('imagine-model').value);
+  form.append('steps', document.getElementById('imagine-steps').value);
+  form.append('generate_3d', imagineAlso3d.checked);
+  form.append('model_3d', document.getElementById('imagine-3d-model').value);
+
+  try {
+    const resp = await fetch(`${API_BASE}/api/imagine`, { method: 'POST', body: form });
+    if (!resp.ok) throw new Error('Failed to start generation');
+    const data = await resp.json();
+    imagineStatus.textContent = `Job ${data.job_id}: generating image...`;
+    pollImagineJob(data.job_id);
+  } catch (err) {
+    imagineStatus.textContent = `Error: ${err.message}`;
+    imagineBtn.disabled = false;
+  }
+});
+
+async function pollImagineJob(jobId) {
+  const poll = setInterval(async () => {
+    try {
+      const resp = await fetch(`${API_BASE}/api/jobs/${jobId}`);
+      const job = await resp.json();
+
+      if (job.image_ready && imaginePreview.style.display === 'none') {
+        imaginePreviewImg.src = `${API_BASE}/api/imagine/image/${jobId}`;
+        imaginePreview.style.display = 'block';
+      }
+
+      if (job.status === 'generating_image') {
+        imagineStatus.textContent = 'Generating image...';
+      } else if (job.status === 'generating_3d') {
+        imagineStatus.textContent = 'Image done! Generating 3D model...';
+      } else if (job.status === 'complete') {
+        clearInterval(poll);
+        imagineBtn.disabled = false;
+        if (job.result) {
+          imagineStatus.textContent = `Done in ${job.result.elapsed_seconds.toFixed(1)}s`;
+          refreshGallery();
+          loadModelFromUrl(`${API_BASE}/api/output/${job.result.output_file}`, job.result.output_file);
+        } else {
+          const elapsed = job.image_result?.elapsed_seconds;
+          imagineStatus.textContent = `Image generated${elapsed ? ` in ${elapsed.toFixed(1)}s` : ''}`;
+        }
+      } else if (job.status === 'failed') {
+        clearInterval(poll);
+        imagineStatus.textContent = `Failed: ${job.error}`;
+        imagineBtn.disabled = false;
+      }
+    } catch {
+      clearInterval(poll);
+      imagineStatus.textContent = 'Lost connection';
+      imagineBtn.disabled = false;
+    }
+  }, 2000);
+}
+
+async function fetchImagineModels() {
+  try {
+    const resp = await fetch(`${API_BASE}/api/imagine/models`);
+    if (!resp.ok) return;
+    const data = await resp.json();
+    if (!data.available) return;
+    const select = document.getElementById('imagine-model');
+    select.innerHTML = '';
+    data.models.forEach(m => {
+      const opt = document.createElement('option');
+      opt.value = m.name;
+      opt.textContent = m.description.split('—')[0].trim();
+      select.appendChild(opt);
+    });
+    select.addEventListener('change', () => {
+      const model = data.models.find(m => m.name === select.value);
+      if (model) document.getElementById('imagine-steps').value = model.default_steps;
+    });
+  } catch {
+    // API offline
+  }
+}
+
+async function fetchModelsFor3dSelect() {
+  try {
+    const resp = await fetch(`${API_BASE}/api/models`);
+    if (!resp.ok) return;
+    const data = await resp.json();
+    const select = document.getElementById('imagine-3d-model');
+    select.innerHTML = '';
+    data.models.forEach(m => {
+      const opt = document.createElement('option');
+      opt.value = m.name;
+      opt.textContent = `${m.name}${m.available ? '' : ' (not installed)'}`;
+      opt.disabled = !m.available;
+      select.appendChild(opt);
+    });
+  } catch {}
+}
+
 // ── Toolbar handlers ────────────────────────────────────────────────────
 document.getElementById('btn-wireframe').addEventListener('click', () => applyViewMode(viewMode === 'wireframe' ? 'default' : 'wireframe'));
 document.getElementById('btn-normals').addEventListener('click', () => applyViewMode(viewMode === 'normals' ? 'default' : 'normals'));
@@ -835,6 +1014,8 @@ function animate() {
 onResize();
 animate();
 fetchModels();
+fetchImagineModels();
+fetchModelsFor3dSelect();
 refreshGallery();
 </script>
 </body>

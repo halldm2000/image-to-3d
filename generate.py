@@ -39,6 +39,12 @@ examples:
                        help="Run all available models on the same image")
     modes.add_argument("--list-models", action="store_true",
                        help="List available model backends and exit")
+    modes.add_argument("--imagine", type=str, metavar="PROMPT",
+                       help="Generate image from text, then convert to 3D")
+    modes.add_argument("--imagine-only", type=str, metavar="PROMPT",
+                       help="Generate image from text (no 3D conversion)")
+    modes.add_argument("--imagine-model", type=str, default="flux-schnell",
+                       help="Text-to-image model (default: flux-schnell)")
 
     quality = p.add_argument_group("quality")
     quality.add_argument("--shape-only", action="store_true",
@@ -225,6 +231,40 @@ def generate_batch(input_dir: Path, output_dir: Path,
     print()
 
 
+def imagine_and_generate(prompt: str, args):
+    """Generate an image from text, optionally followed by 3D conversion."""
+    from text_to_image import generate as imagine, unload as unload_t2i
+
+    slug = prompt[:40].replace(" ", "_").replace("/", "-")
+    image_path = Path(f"input/{slug}.png")
+    image_path.parent.mkdir(parents=True, exist_ok=True)
+
+    print(f"\n  Text-to-Image: {args.imagine_model}")
+    print(f"  Prompt: {prompt}")
+    print(f"  Output: {image_path}")
+    print()
+
+    result = imagine(
+        prompt=prompt,
+        output_path=image_path,
+        model_name=args.imagine_model,
+        seed=args.seed,
+    )
+
+    print(f"  Image generated in {result['elapsed_seconds']:.1f}s")
+    print(f"  Saved: {result['output_path']}")
+
+    if args.imagine_only:
+        return
+
+    print("\n  Freeing image model, loading 3D model...")
+    unload_t2i()
+
+    config = make_config(args)
+    out = args.output or Path(f"output/{slug}.glb")
+    generate_single(image_path, out, args.model, config)
+
+
 def main():
     args = parse_args()
 
@@ -232,8 +272,13 @@ def main():
         print_models()
         return
 
+    if args.imagine or args.imagine_only:
+        prompt = args.imagine or args.imagine_only
+        imagine_and_generate(prompt, args)
+        return
+
     if not args.image:
-        print("Error: image path required (or --list-models)", file=sys.stderr)
+        print("Error: image path required (or --list-models / --imagine)", file=sys.stderr)
         sys.exit(1)
 
     if not args.image.exists():

@@ -103,8 +103,8 @@ chmod +x /tmp/image-to-3d-start.sh
 nohup /tmp/image-to-3d-start.sh > /tmp/image-to-3d-server.log 2>&1 &
 SERVER_PID=\$!
 
-# Wait up to 15 seconds for the server to start listening
-for i in \$(seq 1 15); do
+# Wait up to 30 seconds for the server to start listening
+for i in \$(seq 1 30); do
     if ss -tlnp 2>/dev/null | grep -q ":\${PORT} " || \
        netstat -tlnp 2>/dev/null | grep -q ":\${PORT} "; then
         echo "STARTED"

@@ -69,7 +69,8 @@ def banner():
   ║         image-to-3d  setup wizard         ║
   ╚══════════════════════════════════════════╝{RESET}
 {DIM}  Multi-model 3D generation from 2D images
-  Hunyuan3D | TripoSR | TripoSG | SPAR3D | TRELLIS{RESET}
+  Hunyuan3D | TripoSR | TripoSG | SPAR3D | TRELLIS
+  Text-to-image: FLUX | SDXL{RESET}
 """)
 
 
@@ -478,6 +479,17 @@ def step_install_deps(num, total, selected_models):
         else:
             status("warn", f"No requirements.txt found for {model['name']}")
 
+    # Text-to-image support (FLUX / SDXL)
+    print()
+    if ask("Install text-to-image support (FLUX, SDXL)?"):
+        status("wait", "Installing diffusers, transformers, accelerate...")
+        if conda_run("pip install diffusers transformers accelerate sentencepiece"):
+            status("ok", "Text-to-image packages installed")
+        else:
+            status("warn", "Some text-to-image packages failed — optional, can retry later")
+    else:
+        status("skip", "Skipped text-to-image (can install later: pip install diffusers transformers accelerate)")
+
     # Prompt for HuggingFace login now that huggingface-hub is installed
     logged_in = run(
         f"bash -c 'source {conda_base()}/etc/profile.d/conda.sh && "
@@ -610,6 +622,9 @@ def step_verify(num, total, selected_models):
 
     {DIM}# Compare all installed models{RESET}
     {CYAN}python generate.py input/photo.png --compare{RESET}
+
+    {DIM}# Generate from text (text → image → 3D){RESET}
+    {CYAN}python generate.py --imagine "a wooden treasure chest"{RESET}
 
     {DIM}# Batch process a folder{RESET}
     {CYAN}python generate.py input/ --batch{RESET}
