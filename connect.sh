@@ -47,7 +47,7 @@ fi
 # ── Start server on remote if not running ────────────────────────────────
 echo -e "  ${DIM}Starting server on ${REMOTE_HOST}...${RESET}"
 
-REMOTE_RESULT=$(ssh "${REMOTE_HOST}" bash <<REMOTE_SCRIPT
+REMOTE_RESULT=$(ssh "${REMOTE_HOST}" bash <<REMOTE_SCRIPT || true
 PORT="${REMOTE_PORT}"
 CONDA_ENV="${CONDA_ENV}"
 REMOTE_DIR="${REMOTE_DIR}"
@@ -113,7 +113,11 @@ REMOTE_SCRIPT
 )
 
 # Parse the result
-if echo "${REMOTE_RESULT}" | head -1 | grep -q "ALREADY_RUNNING"; then
+if [ -z "${REMOTE_RESULT}" ]; then
+    echo -e "  ${RED}✗${RESET} No response from ${REMOTE_HOST}"
+    echo -e "  ${DIM}  Check SSH connectivity: ssh ${REMOTE_HOST} echo ok${RESET}"
+    exit 1
+elif echo "${REMOTE_RESULT}" | head -1 | grep -q "ALREADY_RUNNING"; then
     echo -e "  ${GREEN}✓${RESET} Server already running on ${REMOTE_HOST}:${REMOTE_PORT}"
 elif echo "${REMOTE_RESULT}" | head -1 | grep -q "STARTED"; then
     echo -e "  ${GREEN}✓${RESET} Server started on ${REMOTE_HOST}:${REMOTE_PORT}"
