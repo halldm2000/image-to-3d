@@ -183,6 +183,78 @@ def check_gpu():
     return out
 
 
+def install_miniconda():
+    """Download and install Miniconda automatically."""
+    import platform
+    machine = platform.machine()
+    system = platform.system()
+
+    if system == "Linux":
+        arch = "x86_64" if machine == "x86_64" else "aarch64"
+        url = f"https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-{arch}.sh"
+    elif system == "Darwin":
+        arch = "arm64" if machine == "arm64" else "x86_64"
+        url = f"https://repo.anaconda.com/miniconda/Miniconda3-latest-MacOSX-{arch}.sh"
+    else:
+        status("fail", f"Unsupported OS: {system}")
+        return False
+
+    install_path = os.path.expanduser("~/miniconda3")
+    installer = "/tmp/miniconda_installer.sh"
+
+    status("wait", f"Downloading Miniconda for {system} {arch}...")
+    if shutil.which("wget"):
+        dl_ok = run(f"wget -q --show-progress -O {installer} {url}")
+    elif shutil.which("curl"):
+        dl_ok = run(f"curl -fsSL -o {installer} {url}")
+    else:
+        status("fail", "Neither wget nor curl found — cannot download")
+        return False
+
+    if not dl_ok:
+        status("fail", "Download failed")
+        return False
+
+    status("wait", f"Installing Miniconda to {install_path}...")
+    if not run(f"bash {installer} -b -p {install_path}"):
+        status("fail", "Miniconda installation failed")
+        return False
+
+    os.remove(installer)
+
+    # Initialize conda for the current shell
+    run(f"{install_path}/bin/conda init bash 2>/dev/null", capture=True, check=False)
+    run(f"{install_path}/bin/conda init zsh 2>/dev/null", capture=True, check=False)
+
+    status("ok", f"Miniconda installed at {install_path}")
+    status("info", "Conda will be available in new shell sessions automatically")
+    return True
+
+
+def install_git():
+    """Try to install git via system package manager."""
+    import platform
+    system = platform.system()
+
+    if system == "Linux":
+        if shutil.which("apt-get"):
+            status("wait", "Installing git via apt...")
+            return run("sudo apt-get update -qq && sudo apt-get install -y -qq git")
+        elif shutil.which("dnf"):
+            status("wait", "Installing git via dnf...")
+            return run("sudo dnf install -y git")
+        elif shutil.which("yum"):
+            status("wait", "Installing git via yum...")
+            return run("sudo yum install -y git")
+    elif system == "Darwin":
+        status("info", "On macOS, install Xcode command line tools:")
+        status("info", "  xcode-select --install")
+        return False
+
+    status("fail", "Could not detect package manager")
+    return False
+
+
 # ── Steps ─────────────────────────────────────────────────────────────────
 
 def step_check_system(num, total):
@@ -191,20 +263,43 @@ def step_check_system(num, total):
     py_ver = sys.version.split()[0]
     status("ok", f"Python {py_ver}")
 
+    # Git
     if shutil.which("git"):
         status("ok", "git found")
     else:
-        status("fail", "git not found — please install git first")
-        sys.exit(1)
+        status("warn", "git not found")
+        if ask("Install git now?"):
+            if install_git():
+                status("ok", "git installed")
+            else:
+                status("fail", "Could not install git — install it manually and re-run")
+                sys.exit(1)
+        else:
+            status("fail", "git is required")
+            sys.exit(1)
 
+    # Conda
     base = conda_base()
     if base:
         status("ok", f"conda found at {base}")
     else:
-        status("fail", "conda not found — install miniconda or anaconda first")
-        status("info", "https://docs.conda.io/en/latest/miniconda.html")
-        sys.exit(1)
+        status("warn", "conda not found")
+        if ask("Install Miniconda now? (~80 MB download)"):
+            if install_miniconda():
+                base = conda_base()
+                if not base:
+                    status("fail", "Miniconda installed but conda not found on PATH")
+                    status("info", "Open a new terminal and re-run: python setup.py")
+                    sys.exit(1)
+            else:
+                status("fail", "Miniconda installation failed")
+                sys.exit(1)
+        else:
+            status("fail", "conda is required — install miniconda or anaconda")
+            status("info", "https://docs.conda.io/en/latest/miniconda.html")
+            sys.exit(1)
 
+    # GPU
     gpu_info = check_gpu()
     if gpu_info:
         for line in gpu_info.strip().split("\n"):
