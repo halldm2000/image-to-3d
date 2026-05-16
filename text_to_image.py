@@ -33,6 +33,22 @@ MODELS = {
         "default_guidance": 7.5,
         "min_vram_gb": 8,
     },
+    "z-image": {
+        "repo": "Tongyi-MAI/Z-Image-Turbo",
+        "description": "Z-Image Turbo — 6B param DiT, fast and high quality",
+        "pipeline_class": "ZImagePipeline",
+        "default_steps": 4,
+        "default_guidance": 0.0,
+        "min_vram_gb": 16,
+    },
+    "playground": {
+        "repo": "playgroundai/playground-v2.5-1024px-aesthetic",
+        "description": "Playground v2.5 — aesthetic tuned, great for objects",
+        "pipeline_class": "StableDiffusionXLPipeline",
+        "default_steps": 30,
+        "default_guidance": 3.0,
+        "min_vram_gb": 8,
+    },
 }
 
 
@@ -67,18 +83,23 @@ def load(model_name: str = "flux-schnell", low_vram: bool = False):
     unload()
 
     import torch
-    from diffusers import FluxPipeline, StableDiffusionXLPipeline
+    from diffusers import FluxPipeline, StableDiffusionXLPipeline, DiffusionPipeline
 
     info = MODELS[model_name]
-    dtype = torch.float16 if not low_vram else torch.float16
+    dtype = torch.float16
 
     pipeline_classes = {
         "FluxPipeline": FluxPipeline,
         "StableDiffusionXLPipeline": StableDiffusionXLPipeline,
     }
 
-    cls = pipeline_classes[info["pipeline_class"]]
-    pipe = cls.from_pretrained(info["repo"], torch_dtype=dtype)
+    cls_name = info["pipeline_class"]
+    if cls_name in pipeline_classes:
+        pipe = pipeline_classes[cls_name].from_pretrained(info["repo"], torch_dtype=dtype)
+    else:
+        pipe = DiffusionPipeline.from_pretrained(
+            info["repo"], torch_dtype=dtype, trust_remote_code=True
+        )
 
     if low_vram:
         pipe.enable_model_cpu_offload()
