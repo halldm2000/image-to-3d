@@ -51,6 +51,7 @@ REMOTE_RESULT=$(ssh "${REMOTE_HOST}" bash <<REMOTE_SCRIPT || true
 PORT="${REMOTE_PORT}"
 CONDA_ENV="${CONDA_ENV}"
 REMOTE_DIR="${REMOTE_DIR}"
+REMOTE_DIR="\${REMOTE_DIR/#\\~/\${HOME}}"
 
 # Check if server is already listening
 if ss -tlnp 2>/dev/null | grep -q ":\${PORT} " || \
@@ -81,7 +82,7 @@ cat > /tmp/image-to-3d-start.sh <<LAUNCHER
 source "\${CONDA_PATH}/etc/profile.d/conda.sh"
 conda activate "\${CONDA_ENV}" 2>/dev/null || true
 cd "\${REMOTE_DIR}"
-exec python server.py
+exec python3 server.py
 LAUNCHER
 chmod +x /tmp/image-to-3d-start.sh
 
@@ -183,7 +184,7 @@ else
     echo -e "  ${RED}✗${RESET} Server failed to start on ${REMOTE_HOST}"
     echo ""
     # Show log output after ---LOG--- marker
-    if echo "${REMOTE_RESULT}" | grep -q "---LOG---"; then
+    if echo "${REMOTE_RESULT}" | grep -qF -- "---LOG---"; then
         echo -e "  ${DIM}Remote log:${RESET}"
         echo "${REMOTE_RESULT}" | sed -n '/---LOG---/,$ p' | tail -n +2 | sed 's/^/    /'
     fi
