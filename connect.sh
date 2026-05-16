@@ -76,11 +76,25 @@ fi
 
 cd "\${REMOTE_DIR}" || { echo "NO_DIR"; exit 1; }
 
+# Ensure conda env exists with core deps
+source "\${CONDA_PATH}/etc/profile.d/conda.sh"
+if ! conda env list 2>/dev/null | grep -q "\${CONDA_ENV}"; then
+    # Accept TOS if needed
+    conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main 2>/dev/null || true
+    conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r 2>/dev/null || true
+    conda create -y -n "\${CONDA_ENV}" python=3.10 >/dev/null 2>&1 || { echo "ENV_CREATE_FAILED"; exit 1; }
+fi
+
+conda activate "\${CONDA_ENV}"
+if ! python3 -c "import fastapi" 2>/dev/null; then
+    pip install -q fastapi uvicorn python-multipart Pillow trimesh numpy rembg 2>/dev/null || { echo "DEPS_FAILED"; exit 1; }
+fi
+
 # Write a launcher script so nohup has a clean environment
 cat > /tmp/image-to-3d-start.sh <<LAUNCHER
 #!/usr/bin/env bash
 source "\${CONDA_PATH}/etc/profile.d/conda.sh"
-conda activate "\${CONDA_ENV}" 2>/dev/null || true
+conda activate "\${CONDA_ENV}"
 cd "\${REMOTE_DIR}"
 exec python3 server.py
 LAUNCHER
@@ -164,6 +178,14 @@ INSTALL_CONDA
         echo -e "  ${DIM}SSH in and run: cd ${REMOTE_DIR} && python3 setup.py${RESET}"
         exit 1
     fi
+elif echo "${REMOTE_RESULT}" | head -1 | grep -q "ENV_CREATE_FAILED"; then
+    echo -e "  ${RED}✗${RESET} Failed to create conda env on ${REMOTE_HOST}"
+    echo -e "  ${DIM}SSH in and run: cd ${REMOTE_DIR} && python3 setup.py${RESET}"
+    exit 1
+elif echo "${REMOTE_RESULT}" | head -1 | grep -q "DEPS_FAILED"; then
+    echo -e "  ${RED}✗${RESET} Failed to install dependencies on ${REMOTE_HOST}"
+    echo -e "  ${DIM}SSH in and run: cd ${REMOTE_DIR} && python3 setup.py${RESET}"
+    exit 1
 elif echo "${REMOTE_RESULT}" | head -1 | grep -q "NO_DIR"; then
     echo -e "  ${YELLOW}!${RESET} Directory not found on ${REMOTE_HOST}: ${REMOTE_DIR}"
     echo ""
