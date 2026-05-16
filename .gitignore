@@ -1,0 +1,21 @@
+# Cloned model repos (created by setup.py)
+Hunyuan3D-2.1/
+TripoSR/
+TripoSG/
+stable-point-aware-3d/
+TRELLIS/
+
+# Generated outputs
+output/
+input/*_preprocessed.png
+
+# Python
+__pycache__/
+*.pyc
+*.egg-info/
+*.eggs/
+dist/
+build/
+
+# System
+.DS_Store
