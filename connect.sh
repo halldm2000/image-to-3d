@@ -122,13 +122,63 @@ elif echo "${REMOTE_RESULT}" | head -1 | grep -q "ALREADY_RUNNING"; then
 elif echo "${REMOTE_RESULT}" | head -1 | grep -q "STARTED"; then
     echo -e "  ${GREEN}✓${RESET} Server started on ${REMOTE_HOST}:${REMOTE_PORT}"
 elif echo "${REMOTE_RESULT}" | head -1 | grep -q "NO_CONDA"; then
-    echo -e "  ${RED}✗${RESET} conda not found on ${REMOTE_HOST}"
-    echo -e "  ${DIM}  SSH in and run: python3 setup.py${RESET}"
-    exit 1
+    echo -e "  ${YELLOW}!${RESET} conda not found on ${REMOTE_HOST}"
+    echo ""
+    echo -e "  ${BOLD}?${RESET} Install Miniconda on ${REMOTE_HOST} now? [Y/n] \c"
+    read -r REPLY
+    REPLY="${REPLY:-y}"
+    if [[ "${REPLY}" =~ ^[Yy] ]]; then
+        echo ""
+        echo -e "  ${DIM}Installing Miniconda on ${REMOTE_HOST}...${RESET}"
+        ssh "${REMOTE_HOST}" bash <<'INSTALL_CONDA'
+set -e
+ARCH=$(uname -m)
+URL="https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-${ARCH}.sh"
+echo "  Downloading Miniconda for Linux ${ARCH}..."
+curl -fsSL -o /tmp/miniconda_installer.sh "${URL}" || wget -q -O /tmp/miniconda_installer.sh "${URL}"
+echo "  Installing to ~/miniconda3..."
+bash /tmp/miniconda_installer.sh -b -p ~/miniconda3
+rm /tmp/miniconda_installer.sh
+~/miniconda3/bin/conda init bash 2>/dev/null || true
+echo "CONDA_INSTALLED"
+INSTALL_CONDA
+        echo -e "  ${GREEN}✓${RESET} Miniconda installed on ${REMOTE_HOST}"
+        echo -e "  ${DIM}Now run setup.py to install model dependencies:${RESET}"
+        echo ""
+        echo -e "  ${BOLD}?${RESET} Run setup.py on ${REMOTE_HOST} now? (interactive) [Y/n] \c"
+        read -r REPLY2
+        REPLY2="${REPLY2:-y}"
+        if [[ "${REPLY2}" =~ ^[Yy] ]]; then
+            echo ""
+            ssh -t "${REMOTE_HOST}" "cd ${REMOTE_DIR} && source ~/miniconda3/etc/profile.d/conda.sh && python3 setup.py"
+            echo ""
+            echo -e "  ${DIM}Setup complete. Re-running connect...${RESET}"
+            echo ""
+            exec "$0" "$@"
+        else
+            echo -e "  ${DIM}SSH in later and run: cd ${REMOTE_DIR} && python3 setup.py${RESET}"
+            exit 0
+        fi
+    else
+        echo -e "  ${DIM}SSH in and run: cd ${REMOTE_DIR} && python3 setup.py${RESET}"
+        exit 1
+    fi
 elif echo "${REMOTE_RESULT}" | head -1 | grep -q "NO_DIR"; then
-    echo -e "  ${RED}✗${RESET} Directory not found on ${REMOTE_HOST}: ${REMOTE_DIR}"
-    echo -e "  ${DIM}  Set REMOTE_DIR or clone the repo there first${RESET}"
-    exit 1
+    echo -e "  ${YELLOW}!${RESET} Directory not found on ${REMOTE_HOST}: ${REMOTE_DIR}"
+    echo ""
+    echo -e "  ${BOLD}?${RESET} Clone the repo there now? [Y/n] \c"
+    read -r REPLY
+    REPLY="${REPLY:-y}"
+    if [[ "${REPLY}" =~ ^[Yy] ]]; then
+        ssh "${REMOTE_HOST}" "mkdir -p \$(dirname ${REMOTE_DIR}) && git clone https://github.com/halldm2000/image-to-3d.git ${REMOTE_DIR}"
+        echo -e "  ${GREEN}✓${RESET} Repo cloned to ${REMOTE_HOST}:${REMOTE_DIR}"
+        echo -e "  ${DIM}Re-running connect...${RESET}"
+        echo ""
+        exec "$0" "$@"
+    else
+        echo -e "  ${DIM}Clone manually: ssh ${REMOTE_HOST} 'git clone https://github.com/halldm2000/image-to-3d.git ${REMOTE_DIR}'${RESET}"
+        exit 1
+    fi
 else
     echo -e "  ${RED}✗${RESET} Server failed to start on ${REMOTE_HOST}"
     echo ""
