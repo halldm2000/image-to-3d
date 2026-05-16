@@ -351,18 +351,22 @@ def step_huggingface(num, total, selected_models):
         print(f"     {CYAN}https://huggingface.co/settings/tokens{RESET}")
         print()
 
-        if ask("Run huggingface-cli login now?"):
-            run("huggingface-cli login")
-            logged_in = run(
-                "python3 -c \"from huggingface_hub import HfApi; print(HfApi().whoami()['name'])\" 2>/dev/null",
-                capture=True, check=False
-            )
-            if logged_in:
-                status("ok", f"Logged in as: {logged_in}")
+        if shutil.which("huggingface-cli"):
+            if ask("Run huggingface-cli login now?"):
+                run("huggingface-cli login")
+                logged_in = run(
+                    "python3 -c \"from huggingface_hub import HfApi; print(HfApi().whoami()['name'])\" 2>/dev/null",
+                    capture=True, check=False
+                )
+                if logged_in:
+                    status("ok", f"Logged in as: {logged_in}")
+                else:
+                    status("warn", "Login may have failed — you can retry later")
             else:
-                status("warn", "Login may have failed — you can retry later")
+                status("skip", "Skipped — remember to log in before your first generation")
         else:
-            status("skip", "Skipped — remember to log in before your first generation")
+            status("skip", "huggingface-cli not yet installed (will be available after Step 6)")
+            status("info", "You'll be prompted to log in after dependencies are installed")
 
 
 def step_clone_repos(num, total, selected_models):
@@ -400,8 +404,26 @@ def step_conda_env(num, total):
             status("skip", "Using existing environment")
             return
 
+    # Accept conda TOS if required (newer conda versions)
+    base = conda_base()
+    tos_check = run(
+        f"bash -c 'source {base}/etc/profile.d/conda.sh && "
+        f"conda create --dry-run -n _tos_test python=3.10' 2>&1",
+        capture=True, check=False
+    )
+    if tos_check and "CondaToS" in str(tos_check):
+        status("info", "Accepting conda Terms of Service...")
+        run(f"bash -c 'source {base}/etc/profile.d/conda.sh && "
+            f"conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main' 2>/dev/null",
+            capture=True, check=False)
+        run(f"bash -c 'source {base}/etc/profile.d/conda.sh && "
+            f"conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r' 2>/dev/null",
+            capture=True, check=False)
+        status("ok", "TOS accepted")
+
     status("wait", "Creating conda env with Python 3.10...")
-    if run(f"conda create -y -n {CONDA_ENV} python=3.10"):
+    if run(f"bash -c 'source {base}/etc/profile.d/conda.sh && "
+           f"conda create -y -n {CONDA_ENV} python=3.10'"):
         status("ok", "Environment created")
     else:
         status("fail", "Failed to create conda env")
@@ -455,6 +477,21 @@ def step_install_deps(num, total, selected_models):
                     sys.exit(1)
         else:
             status("warn", f"No requirements.txt found for {model['name']}")
+
+    # Prompt for HuggingFace login now that huggingface-hub is installed
+    logged_in = run(
+        f"bash -c 'source {conda_base()}/etc/profile.d/conda.sh && "
+        f"conda activate {CONDA_ENV} && "
+        f"python -c \"from huggingface_hub import HfApi; print(HfApi().whoami()[\\\"name\\\"])\"' 2>/dev/null",
+        capture=True, check=False
+    )
+    if not logged_in:
+        print()
+        status("info", "HuggingFace login needed to download model weights")
+        if ask("Run huggingface-cli login now?"):
+            conda_run("huggingface-cli login")
+        else:
+            status("skip", "Remember to run: conda activate image-to-3d && huggingface-cli login")
 
 
 def step_build_extensions(num, total, selected_models):
