@@ -291,7 +291,9 @@ def _run_generation(job_id, input_path, output_path,
 
         log(f"Loading 3D model: {model_name}...")
         m = get_model(model_name)
-        m.load(low_vram=low_vram)
+        from download_progress import track_downloads
+        with track_downloads(log):
+            m.load(low_vram=low_vram)
         log("Generating 3D mesh...")
         result = m.generate(input_path, output_path, config)
         log(f"3D generation complete ({result.elapsed_seconds:.1f}s)")
