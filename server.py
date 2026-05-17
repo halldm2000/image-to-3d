@@ -152,13 +152,24 @@ def api_imagine_image(job_id: str):
 
 
 def _job_log(job_id, msg):
-    """Append a timestamped log entry to a job."""
+    """Append a timestamped log entry to a job.
+
+    If msg starts with \\r, it replaces the last progress entry instead
+    of appending (like a terminal carriage return).
+    """
     if "logs" not in jobs[job_id]:
         jobs[job_id]["logs"] = []
-    jobs[job_id]["logs"].append({
-        "t": datetime.now().isoformat(),
-        "msg": msg,
-    })
+    replace = msg.startswith("\r")
+    if replace:
+        msg = msg[1:]
+    entry = {"t": datetime.now().isoformat(), "msg": msg}
+    if replace:
+        entry["r"] = True
+        for i in range(len(jobs[job_id]["logs"]) - 1, -1, -1):
+            if jobs[job_id]["logs"][i].get("r"):
+                jobs[job_id]["logs"][i] = entry
+                return
+    jobs[job_id]["logs"].append(entry)
 
 
 def _run_imagine(job_id, prompt, output_image, model_name,

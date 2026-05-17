@@ -145,9 +145,9 @@ def ensure_downloaded(repo_id: str, log=None):
             if totals:
                 total_expected = sum(totals.values())
                 pct = total_downloaded / total_expected * 100 if total_expected else 0
-                log(f"Overall: {pct:.0f}% ({_fmt(total_downloaded)} / {_fmt(total_expected)}) — {len(incompletes)} files remaining")
+                log(f"\rDownloading: {pct:.0f}% ({_fmt(total_downloaded)} / {_fmt(total_expected)}) — {len(incompletes)} files remaining")
             else:
-                log(f"Downloaded {_fmt(total_downloaded)} — {len(incompletes)} files remaining")
+                log(f"\rDownloading: {_fmt(total_downloaded)} — {len(incompletes)} files remaining")
 
         if status_file.exists():
             try:

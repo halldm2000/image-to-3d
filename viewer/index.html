@@ -881,16 +881,33 @@ function setActiveStatus(el, message) {
 }
 
 function appendLogs(job, state) {
-  if (!job.logs || job.logs.length <= state.logCount) return;
-  for (let i = state.logCount; i < job.logs.length; i++) {
-    const entry = document.createElement('div');
-    entry.className = 'log-entry';
-    const t = new Date(job.logs[i].t);
-    entry.innerHTML = `<span class="log-time">${t.toLocaleTimeString()}</span>${job.logs[i].msg}`;
-    logContent.appendChild(entry);
+  if (!job.logs) return;
+  let changed = false;
+  for (let i = 0; i < job.logs.length; i++) {
+    const log = job.logs[i];
+    const t = new Date(log.t);
+    const html = `<span class="log-time">${t.toLocaleTimeString()}</span>${log.msg}`;
+    if (log.r) {
+      let el = logContent.querySelector('.log-progress');
+      if (!el) {
+        el = document.createElement('div');
+        el.className = 'log-entry log-progress';
+        logContent.appendChild(el);
+        changed = true;
+      }
+      if (el.innerHTML !== html) { el.innerHTML = html; changed = true; }
+    } else if (i >= state.logCount) {
+      const el = document.createElement('div');
+      el.className = 'log-entry';
+      el.innerHTML = html;
+      const prog = logContent.querySelector('.log-progress');
+      if (prog) logContent.insertBefore(el, prog);
+      else logContent.appendChild(el);
+      changed = true;
+    }
   }
   state.logCount = job.logs.length;
-  logContent.scrollTop = logContent.scrollHeight;
+  if (changed) logContent.scrollTop = logContent.scrollHeight;
 }
 
 function showLogPanel() {

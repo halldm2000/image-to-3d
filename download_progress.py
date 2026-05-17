@@ -94,7 +94,7 @@ def _monitor(cache_dir, repo_id, log, stop):
             if remaining > 1 and (not total or size < total):
                 msg += f", ~{_fmt_time(remaining)} left"
 
-            log(msg)
+            log(f"\r{msg}")
 
         finished = [p for p in tracked if not p.exists()]
         for p in finished:
