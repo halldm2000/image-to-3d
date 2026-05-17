@@ -97,18 +97,18 @@ def load(model_name: str = "playground", low_vram: bool = False,
         "StableDiffusionXLPipeline": StableDiffusionXLPipeline,
     }
 
-    log(f"Downloading/loading {info['description'].split('—')[0].strip()}...")
+    log(f"Loading {info['description'].split('—')[0].strip()}...")
 
-    from download_progress import track_downloads
+    from download_model import ensure_downloaded
+    ensure_downloaded(info["repo"], log=log)
 
     cls_name = info["pipeline_class"]
-    with track_downloads(log, repo_id=info["repo"]):
-        if cls_name in pipeline_classes:
-            pipe = pipeline_classes[cls_name].from_pretrained(info["repo"], torch_dtype=dtype)
-        else:
-            pipe = DiffusionPipeline.from_pretrained(
-                info["repo"], torch_dtype=dtype, trust_remote_code=True
-            )
+    if cls_name in pipeline_classes:
+        pipe = pipeline_classes[cls_name].from_pretrained(info["repo"], torch_dtype=dtype)
+    else:
+        pipe = DiffusionPipeline.from_pretrained(
+            info["repo"], torch_dtype=dtype, trust_remote_code=True
+        )
 
     log("Moving model to GPU...")
     if low_vram:

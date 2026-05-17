@@ -566,6 +566,71 @@ def step_download_esrgan(num, total, selected_models):
         status("fail", "Download failed")
 
 
+HF_MODELS = {
+    "playground": ("playgroundai/playground-v2.5-1024px-aesthetic", "Playground v2.5", "~7 GB", "text-to-image, no auth required"),
+    "flux-schnell": ("black-forest-labs/FLUX.1-schnell", "FLUX.1 Schnell", "~58 GB", "text-to-image, fast 4-step"),
+    "sdxl": ("stabilityai/stable-diffusion-xl-base-1.0", "Stable Diffusion XL", "~7 GB", "text-to-image, reliable"),
+}
+
+
+def step_download_weights(num, total):
+    step_header(num, total, "Pre-download model weights (optional)")
+    print(f"  {DIM}Models are large (7-58 GB). Downloads run in the background{RESET}")
+    print(f"  {DIM}and continue even if you close this terminal.{RESET}")
+    print(f"  {DIM}Models not downloaded now will auto-download on first use.{RESET}")
+    print()
+
+    if not ask("Pre-download any model weights now?", default="n"):
+        status("skip", "Skipped — models will download on first use")
+        return
+
+    print(f"\n  {BOLD}?{RESET} Which model weights to download?")
+    for i, (key, (repo, name, size, desc)) in enumerate(HF_MODELS.items(), 1):
+        print(f"    {BOLD}{i}{RESET}) {name:<22} {DIM}{size:>8}{RESET}  {desc}")
+    print(f"    {BOLD}a{RESET}) All of the above")
+    print()
+
+    try:
+        resp = input(f"  Enter choices (e.g. 1,2 or a): ").strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        print()
+        return
+
+    keys = list(HF_MODELS.keys())
+    if resp == "a":
+        selected = keys
+    else:
+        selected = []
+        for part in resp.split(","):
+            part = part.strip()
+            if part.isdigit():
+                idx = int(part) - 1
+                if 0 <= idx < len(keys):
+                    selected.append(keys[idx])
+
+    if not selected:
+        status("skip", "No models selected")
+        return
+
+    for key in selected:
+        repo_id, name, size, _ = HF_MODELS[key]
+        status("wait", f"Starting background download: {name} ({size})...")
+        script = os.path.join(PROJECT_DIR, "download_model.py")
+        status_dir = os.path.join(PROJECT_DIR, ".download_status")
+        os.makedirs(status_dir, exist_ok=True)
+        status_file = os.path.join(status_dir, f"{repo_id.replace('/', '--')}.json")
+
+        conda_run(
+            f"python3 {script} {repo_id} --status-file {status_file} &"
+        )
+        status("ok", f"{name} download started in background (PID shown above)")
+
+    print()
+    status("info", "Downloads will continue in the background")
+    status("info", "Check progress at http://localhost:8090 or via:")
+    print(f"    {CYAN}curl http://localhost:8090/api/download/status{RESET}")
+
+
 def step_verify(num, total, selected_models):
     step_header(num, total, "Verify installation")
 
@@ -653,7 +718,7 @@ def main():
         print(f"\n  {DIM}Run again with: python setup.py{RESET}\n")
         sys.exit(0)
 
-    total = 9
+    total = 10
 
     step_check_system(1, total)
     selected = step_choose_models(2, total)
@@ -663,7 +728,8 @@ def main():
     step_install_deps(6, total, selected)
     step_build_extensions(7, total, selected)
     step_download_esrgan(8, total, selected)
-    step_verify(9, total, selected)
+    step_download_weights(9, total)
+    step_verify(10, total, selected)
 
 
 if __name__ == "__main__":
