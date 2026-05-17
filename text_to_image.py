@@ -2,7 +2,7 @@
 
 import time
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 _pipeline = None
 _pipeline_name = None
@@ -51,6 +51,8 @@ MODELS = {
     },
 }
 
+_noop_log = lambda msg: None
+
 
 def available_models() -> list[dict]:
     results = []
@@ -74,10 +76,12 @@ def is_available() -> bool:
         return False
 
 
-def load(model_name: str = "playground", low_vram: bool = False):
+def load(model_name: str = "playground", low_vram: bool = False,
+         log: Callable = _noop_log):
     global _pipeline, _pipeline_name
 
     if _pipeline is not None and _pipeline_name == model_name:
+        log("Model already loaded")
         return
 
     unload()
@@ -93,6 +97,8 @@ def load(model_name: str = "playground", low_vram: bool = False):
         "StableDiffusionXLPipeline": StableDiffusionXLPipeline,
     }
 
+    log(f"Downloading/loading {info['description'].split('—')[0].strip()}...")
+
     cls_name = info["pipeline_class"]
     if cls_name in pipeline_classes:
         pipe = pipeline_classes[cls_name].from_pretrained(info["repo"], torch_dtype=dtype)
@@ -101,6 +107,7 @@ def load(model_name: str = "playground", low_vram: bool = False):
             info["repo"], torch_dtype=dtype, trust_remote_code=True
         )
 
+    log("Moving model to GPU...")
     if low_vram:
         pipe.enable_model_cpu_offload()
     else:
@@ -108,6 +115,7 @@ def load(model_name: str = "playground", low_vram: bool = False):
 
     _pipeline = pipe
     _pipeline_name = model_name
+    log("Model ready")
 
 
 def generate(
@@ -120,11 +128,12 @@ def generate(
     width: int = 1024,
     height: int = 1024,
     low_vram: bool = False,
+    log: Callable = _noop_log,
 ) -> dict:
     """Generate an image from a text prompt. Returns metadata dict."""
     import torch
 
-    load(model_name, low_vram=low_vram)
+    load(model_name, low_vram=low_vram, log=log)
 
     info = MODELS[model_name]
     num_steps = steps or info["default_steps"]
@@ -134,7 +143,12 @@ def generate(
     if seed is not None:
         generator = torch.Generator(device="cuda").manual_seed(seed)
 
+    def step_callback(pipe, step_index, timestep, callback_kwargs):
+        log(f"Inference step {step_index + 1}/{num_steps}")
+        return callback_kwargs
+
     t0 = time.time()
+    log(f"Starting inference ({num_steps} steps)...")
 
     kwargs = {
         "prompt": prompt,
@@ -143,6 +157,7 @@ def generate(
         "width": width,
         "height": height,
         "generator": generator,
+        "callback_on_step_end": step_callback,
     }
 
     image = _pipeline(**kwargs).images[0]
@@ -151,6 +166,7 @@ def generate(
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     image.save(output_path)
+    log(f"Image saved ({elapsed:.1f}s)")
 
     return {
         "output_path": str(output_path),

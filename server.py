@@ -149,15 +149,28 @@ def api_imagine_image(job_id: str):
     return FileResponse(image_path, media_type="image/png")
 
 
+def _job_log(job_id, msg):
+    """Append a timestamped log entry to a job."""
+    if "logs" not in jobs[job_id]:
+        jobs[job_id]["logs"] = []
+    jobs[job_id]["logs"].append({
+        "t": datetime.now().isoformat(),
+        "msg": msg,
+    })
+
+
 def _run_imagine(job_id, prompt, output_image, model_name,
                  steps, guidance, seed, width, height, low_vram,
                  generate_3d, model_3d):
     """Run text-to-image generation in a background thread."""
     jobs[job_id]["status"] = "generating_image"
     jobs[job_id]["started"] = datetime.now().isoformat()
+    log = lambda msg: _job_log(job_id, msg)
 
     try:
         from text_to_image import generate as imagine
+
+        log(f"Starting image generation with {model_name}")
 
         result = imagine(
             prompt=prompt,
@@ -169,6 +182,7 @@ def _run_imagine(job_id, prompt, output_image, model_name,
             width=width,
             height=height,
             low_vram=low_vram,
+            log=log,
         )
 
         jobs[job_id]["image_result"] = result
@@ -179,6 +193,7 @@ def _run_imagine(job_id, prompt, output_image, model_name,
             jobs[job_id]["completed"] = datetime.now().isoformat()
             return
 
+        log("Freeing image model, loading 3D model...")
         jobs[job_id]["status"] = "generating_3d"
         output_glb = OUTPUT_DIR / f"{job_id}_imagined.glb"
         jobs[job_id]["output"] = str(output_glb)
@@ -244,6 +259,7 @@ def _run_generation(job_id, input_path, output_path,
                     octree_res, seed, low_vram, do_preprocess):
     """Run generation in a background thread."""
     import time
+    log = lambda msg: _job_log(job_id, msg)
 
     if jobs[job_id]["status"] not in ("generating_3d",):
         jobs[job_id]["status"] = "running"
@@ -265,15 +281,20 @@ def _run_generation(job_id, input_path, output_path,
         )
 
         if do_preprocess:
+            log("Preprocessing image (background removal)...")
             try:
                 from preprocess import preprocess as pp
                 input_path = pp(input_path)
+                log("Preprocessing complete")
             except ImportError:
-                pass
+                log("Skipping preprocessing (rembg not installed)")
 
+        log(f"Loading 3D model: {model_name}...")
         m = get_model(model_name)
         m.load(low_vram=low_vram)
+        log("Generating 3D mesh...")
         result = m.generate(input_path, output_path, config)
+        log(f"3D generation complete ({result.elapsed_seconds:.1f}s)")
         m.unload()
 
         jobs[job_id]["status"] = "complete"
