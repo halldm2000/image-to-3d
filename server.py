@@ -98,7 +98,7 @@ def api_imagine_models():
 @app.post("/api/imagine")
 async def api_imagine(
     prompt: str = Form(...),
-    model: str = Form("flux-schnell"),
+    model: str = Form("playground"),
     steps: Optional[int] = Form(None),
     guidance: Optional[float] = Form(None),
     seed: Optional[int] = Form(None),

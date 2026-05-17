@@ -74,7 +74,7 @@ def is_available() -> bool:
         return False
 
 
-def load(model_name: str = "flux-schnell", low_vram: bool = False):
+def load(model_name: str = "playground", low_vram: bool = False):
     global _pipeline, _pipeline_name
 
     if _pipeline is not None and _pipeline_name == model_name:
@@ -113,7 +113,7 @@ def load(model_name: str = "flux-schnell", low_vram: bool = False):
 def generate(
     prompt: str,
     output_path: Path,
-    model_name: str = "flux-schnell",
+    model_name: str = "playground",
     steps: Optional[int] = None,
     guidance_scale: Optional[float] = None,
     seed: Optional[int] = None,

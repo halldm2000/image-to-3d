@@ -43,8 +43,8 @@ examples:
                        help="Generate image from text, then convert to 3D")
     modes.add_argument("--imagine-only", type=str, metavar="PROMPT",
                        help="Generate image from text (no 3D conversion)")
-    modes.add_argument("--imagine-model", type=str, default="flux-schnell",
-                       help="Text-to-image model (default: flux-schnell)")
+    modes.add_argument("--imagine-model", type=str, default="playground",
+                       help="Text-to-image model (default: playground)")
 
     quality = p.add_argument_group("quality")
     quality.add_argument("--shape-only", action="store_true",
