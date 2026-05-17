@@ -26,6 +26,11 @@ def track_downloads(log):
             super().__init__(*args, **kwargs)
             self._last_pct = -10
             self._t0 = time.time()
+            self._start_n = self.n
+            if self.total and self.total > 0 and self._start_n > 0:
+                pct = self._start_n / self.total * 100
+                log(f"{(self.desc or 'Downloading').rstrip(': ')}: resuming at {pct:.0f}% ({_fmt(self._start_n)}/{_fmt(self.total)})")
+                self._last_pct = pct
 
         def update(self, n=1):
             result = super().update(n)
@@ -38,8 +43,10 @@ def track_downloads(log):
                 desc = (self.desc or "Downloading").rstrip(": ")
 
                 elapsed = time.time() - self._t0
-                rate = self.n / elapsed if elapsed > 0 else 0
-                remaining = (self.total - self.n) / rate if rate > 0 else 0
+                downloaded = self.n - self._start_n
+                rate = downloaded / elapsed if elapsed > 0 else 0
+                remaining_bytes = self.total - self.n
+                remaining = remaining_bytes / rate if rate > 0 else 0
 
                 msg = f"{desc}: {pct:.0f}% ({_fmt(self.n)}/{_fmt(self.total)})"
                 if elapsed > 1:
