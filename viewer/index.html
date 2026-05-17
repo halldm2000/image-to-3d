@@ -95,6 +95,20 @@
   .btn-generate:disabled { opacity: 0.4; cursor: not-allowed; }
 
   #gen-status { font-size: 10px; color: #78716c; margin-top: 4px; min-height: 14px; }
+  #imagine-status { font-size: 10px; color: #78716c; margin-top: 4px; min-height: 14px; }
+
+  .status-active {
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+  .status-active .pulse {
+    width: 6px; height: 6px; border-radius: 50%; background: #c45621;
+    animation: pulse 1.5s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 0.3; transform: scale(0.8); }
+    50% { opacity: 1; transform: scale(1.2); }
+  }
+  .status-timer { font-variant-numeric: tabular-nums; }
 
   /* ── Tab switcher ─────────────────────────────────────────── */
   .tab-bar { display: flex; gap: 2px; margin-bottom: 10px; }
@@ -694,11 +708,21 @@ uploadInput.addEventListener('change', (e) => {
   document.getElementById('btn-gen').disabled = false;
 });
 
+let genTimerInterval = null;
+
 document.getElementById('btn-gen').addEventListener('click', async () => {
   if (!uploadedFile) return;
   const btn = document.getElementById('btn-gen');
   const statusEl = document.getElementById('gen-status');
   btn.disabled = true;
+
+  const t0 = Date.now();
+  if (genTimerInterval) clearInterval(genTimerInterval);
+  const updateTimer = () => {
+    const s = ((Date.now() - t0) / 1000).toFixed(0);
+    statusEl.innerHTML = `<span class="status-active"><span class="pulse"></span>Generating 3D... <span class="status-timer">${s}s</span></span>`;
+  };
+
   statusEl.textContent = 'Uploading...';
 
   const form = new FormData();
@@ -710,7 +734,8 @@ document.getElementById('btn-gen').addEventListener('click', async () => {
     const resp = await fetch(`${API_BASE}/api/generate`, { method: 'POST', body: form });
     if (!resp.ok) throw new Error('Generation failed to start');
     const data = await resp.json();
-    statusEl.textContent = `Job ${data.job_id}: running...`;
+    updateTimer();
+    genTimerInterval = setInterval(updateTimer, 1000);
     pollJob(data.job_id);
   } catch (err) {
     statusEl.textContent = `Error: ${err.message}`;
@@ -729,19 +754,20 @@ async function pollJob(jobId) {
 
       if (job.status === 'complete') {
         clearInterval(poll);
+        if (genTimerInterval) { clearInterval(genTimerInterval); genTimerInterval = null; }
         statusEl.textContent = `Done in ${job.result.elapsed_seconds.toFixed(1)}s`;
         btn.disabled = false;
         refreshGallery();
         loadModelFromUrl(`${API_BASE}/api/output/${job.result.output_file}`, job.result.output_file);
       } else if (job.status === 'failed') {
         clearInterval(poll);
+        if (genTimerInterval) { clearInterval(genTimerInterval); genTimerInterval = null; }
         statusEl.textContent = `Failed: ${job.error}`;
         btn.disabled = false;
-      } else {
-        statusEl.textContent = `${job.status}...`;
       }
     } catch {
       clearInterval(poll);
+      if (genTimerInterval) { clearInterval(genTimerInterval); genTimerInterval = null; }
       statusEl.textContent = 'Lost connection to server';
       btn.disabled = false;
     }
@@ -791,12 +817,33 @@ imagineAlso3d.addEventListener('change', () => {
   imagine3dRow.style.display = imagineAlso3d.checked ? 'flex' : 'none';
 });
 
+let imagineTimerInterval = null;
+
+function setActiveStatus(el, message) {
+  el.innerHTML = `<span class="status-active"><span class="pulse"></span>${message}</span>`;
+}
+
+function startTimer(el, phase) {
+  const t0 = Date.now();
+  if (imagineTimerInterval) clearInterval(imagineTimerInterval);
+  const update = () => {
+    const s = ((Date.now() - t0) / 1000).toFixed(0);
+    el.innerHTML = `<span class="status-active"><span class="pulse"></span>${phase} <span class="status-timer">${s}s</span></span>`;
+  };
+  update();
+  imagineTimerInterval = setInterval(update, 1000);
+}
+
+function stopTimer() {
+  if (imagineTimerInterval) { clearInterval(imagineTimerInterval); imagineTimerInterval = null; }
+}
+
 imagineBtn.addEventListener('click', async () => {
   const prompt = imaginePrompt.value.trim();
   if (!prompt) { imagineStatus.textContent = 'Enter a prompt first'; return; }
 
   imagineBtn.disabled = true;
-  imagineStatus.textContent = 'Generating image...';
+  startTimer(imagineStatus, 'Generating image...');
   imaginePreview.style.display = 'none';
 
   const form = new FormData();
@@ -810,15 +857,16 @@ imagineBtn.addEventListener('click', async () => {
     const resp = await fetch(`${API_BASE}/api/imagine`, { method: 'POST', body: form });
     if (!resp.ok) throw new Error('Failed to start generation');
     const data = await resp.json();
-    imagineStatus.textContent = `Job ${data.job_id}: generating image...`;
     pollImagineJob(data.job_id);
   } catch (err) {
+    stopTimer();
     imagineStatus.textContent = `Error: ${err.message}`;
     imagineBtn.disabled = false;
   }
 });
 
 async function pollImagineJob(jobId) {
+  let phase = 'generating_image';
   const poll = setInterval(async () => {
     try {
       const resp = await fetch(`${API_BASE}/api/jobs/${jobId}`);
@@ -830,27 +878,29 @@ async function pollImagineJob(jobId) {
       }
 
       if (job.status === 'generating_image') {
-        imagineStatus.textContent = 'Generating image...';
+        if (phase !== 'generating_image') { phase = 'generating_image'; startTimer(imagineStatus, 'Generating image...'); }
       } else if (job.status === 'generating_3d') {
-        imagineStatus.textContent = 'Image done! Generating 3D model...';
+        if (phase !== 'generating_3d') { phase = 'generating_3d'; startTimer(imagineStatus, 'Generating 3D model...'); }
       } else if (job.status === 'complete') {
-        clearInterval(poll);
+        clearInterval(poll); stopTimer();
         imagineBtn.disabled = false;
         if (job.result) {
-          imagineStatus.textContent = `Done in ${job.result.elapsed_seconds.toFixed(1)}s`;
+          const imgTime = job.image_result?.elapsed_seconds;
+          const totalTime = job.result.elapsed_seconds + (imgTime || 0);
+          imagineStatus.textContent = `Done in ${totalTime.toFixed(1)}s (image ${imgTime?.toFixed(1) || '?'}s + 3D ${job.result.elapsed_seconds.toFixed(1)}s)`;
           refreshGallery();
           loadModelFromUrl(`${API_BASE}/api/output/${job.result.output_file}`, job.result.output_file);
         } else {
           const elapsed = job.image_result?.elapsed_seconds;
-          imagineStatus.textContent = `Image generated${elapsed ? ` in ${elapsed.toFixed(1)}s` : ''}`;
+          imagineStatus.textContent = `Image generated in ${elapsed ? elapsed.toFixed(1) + 's' : '?'}`;
         }
       } else if (job.status === 'failed') {
-        clearInterval(poll);
+        clearInterval(poll); stopTimer();
         imagineStatus.textContent = `Failed: ${job.error}`;
         imagineBtn.disabled = false;
       }
     } catch {
-      clearInterval(poll);
+      clearInterval(poll); stopTimer();
       imagineStatus.textContent = 'Lost connection';
       imagineBtn.disabled = false;
     }
