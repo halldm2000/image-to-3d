@@ -8,6 +8,8 @@ list output files, and stream progress.
 import asyncio
 import json
 import os
+import subprocess
+import sys
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -312,6 +314,105 @@ def _run_generation(job_id, input_path, output_path,
     except Exception as e:
         jobs[job_id]["status"] = "failed"
         jobs[job_id]["error"] = str(e)
+
+
+DOWNLOAD_STATUS_DIR = PROJECT_DIR / ".download_status"
+HF_CACHE_DIR = Path.home() / ".cache" / "huggingface" / "hub"
+
+
+@app.post("/api/download")
+def api_start_download(repo_id: str = Form(...)):
+    """Start downloading a model in a detached background process."""
+    DOWNLOAD_STATUS_DIR.mkdir(exist_ok=True)
+    status_file = DOWNLOAD_STATUS_DIR / f"{repo_id.replace('/', '--')}.json"
+
+    existing = _read_download_status(status_file)
+    if existing and existing.get("status") == "downloading":
+        pid = existing.get("pid")
+        if pid and _pid_alive(pid):
+            return {"status": "already_downloading", "repo_id": repo_id}
+
+    status_file.write_text(json.dumps({
+        "repo_id": repo_id, "status": "spawning", "started": datetime.now().isoformat(),
+    }))
+
+    proc = subprocess.Popen(
+        [sys.executable, str(PROJECT_DIR / "download_model.py"),
+         repo_id, "--status-file", str(status_file)],
+        start_new_session=True,
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    )
+
+    status_file.write_text(json.dumps({
+        "repo_id": repo_id, "status": "downloading", "pid": proc.pid,
+        "started": datetime.now().isoformat(),
+    }))
+
+    return {"status": "started", "repo_id": repo_id, "pid": proc.pid}
+
+
+@app.get("/api/download/status")
+def api_download_status(repo_id: str = None):
+    """Check download status for a model, including cache progress."""
+    if repo_id:
+        return _get_download_info(repo_id)
+
+    DOWNLOAD_STATUS_DIR.mkdir(exist_ok=True)
+    results = {}
+    for f in DOWNLOAD_STATUS_DIR.glob("*.json"):
+        info = _read_download_status(f)
+        if info:
+            results[info.get("repo_id", f.stem)] = info
+    return {"downloads": results}
+
+
+def _get_download_info(repo_id: str) -> dict:
+    """Get download progress for a specific repo from cache files."""
+    DOWNLOAD_STATUS_DIR.mkdir(exist_ok=True)
+    status_file = DOWNLOAD_STATUS_DIR / f"{repo_id.replace('/', '--')}.json"
+    proc_status = _read_download_status(status_file) or {}
+
+    repo_dir = HF_CACHE_DIR / f"models--{repo_id.replace('/', '--')}" / "blobs"
+    if not repo_dir.exists():
+        return {"repo_id": repo_id, "cached": False, **proc_status}
+
+    complete_bytes = 0
+    incomplete_bytes = 0
+    incomplete_files = []
+    for f in repo_dir.iterdir():
+        try:
+            size = f.stat().st_size
+        except OSError:
+            continue
+        if f.name.endswith(".incomplete"):
+            incomplete_bytes += size
+            incomplete_files.append({"hash": f.stem[:12], "size": size})
+        elif not f.name.startswith("."):
+            complete_bytes += size
+
+    return {
+        "repo_id": repo_id,
+        "cached": len(incomplete_files) == 0 and complete_bytes > 0,
+        "complete_bytes": complete_bytes,
+        "incomplete_bytes": incomplete_bytes,
+        "incomplete_files": len(incomplete_files),
+        **proc_status,
+    }
+
+
+def _read_download_status(path: Path) -> dict | None:
+    try:
+        return json.loads(path.read_text()) if path.exists() else None
+    except Exception:
+        return None
+
+
+def _pid_alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+        return True
+    except (OSError, ProcessLookupError):
+        return False
 
 
 @app.get("/api/jobs/{job_id}")
