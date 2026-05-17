@@ -102,7 +102,7 @@ def load(model_name: str = "playground", low_vram: bool = False,
     from download_progress import track_downloads
 
     cls_name = info["pipeline_class"]
-    with track_downloads(log):
+    with track_downloads(log, repo_id=info["repo"]):
         if cls_name in pipeline_classes:
             pipe = pipeline_classes[cls_name].from_pretrained(info["repo"], torch_dtype=dtype)
         else:
