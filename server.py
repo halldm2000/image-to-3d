@@ -42,6 +42,31 @@ def api_list_models():
     return {"models": list_models()}
 
 
+@app.get("/api/images")
+def api_list_images():
+    """List image files in the input directory."""
+    INPUT_DIR.mkdir(exist_ok=True)
+    results = []
+    for ext in ("*.png", "*.jpg", "*.jpeg", "*.webp"):
+        for img in INPUT_DIR.glob(ext):
+            results.append({
+                "filename": img.name,
+                "modified": datetime.fromtimestamp(img.stat().st_mtime).isoformat(),
+                "size_bytes": img.stat().st_size,
+            })
+    results.sort(key=lambda x: x["modified"], reverse=True)
+    return {"images": results}
+
+
+@app.get("/api/image/{filename}")
+def api_get_image(filename: str):
+    """Serve an image from the input directory."""
+    path = INPUT_DIR / filename
+    if not path.exists() or not path.is_relative_to(INPUT_DIR):
+        raise HTTPException(404, "Image not found")
+    return FileResponse(path, media_type=f"image/{path.suffix.lstrip('.')}")
+
+
 @app.get("/api/outputs")
 def api_list_outputs():
     """List all generated .glb files with metadata."""

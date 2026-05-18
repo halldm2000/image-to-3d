@@ -70,6 +70,13 @@
 
   .gallery-empty { padding: 20px 12px; text-align: center; color: #78716c; font-size: 12px; }
 
+  #image-gallery { overflow-y: auto; max-height: 180px; padding: 4px 8px; display: flex; flex-wrap: wrap; gap: 4px; }
+  .img-thumb {
+    width: 48px; height: 48px; border-radius: 4px; object-fit: cover; cursor: pointer;
+    border: 2px solid transparent; transition: border-color 0.15s;
+  }
+  .img-thumb:hover { border-color: #c45621; }
+
   /* ── Generate panel ─────────────────────────────────────────── */
   #generate-panel {
     padding: 10px 12px; border-bottom: 1px solid rgba(120,113,108,0.1);
@@ -313,7 +320,12 @@
   </div>
 
   <div class="sidebar-section" style="padding-bottom:4px;">
-    <h3>Output Gallery</h3>
+    <h3>Images</h3>
+  </div>
+  <div id="image-gallery"></div>
+
+  <div class="sidebar-section" style="padding-bottom:4px;">
+    <h3>3D Models</h3>
   </div>
   <div id="gallery">
     <div class="gallery-empty">No models yet.<br>Drop a .glb or generate one above.</div>
@@ -750,6 +762,41 @@ async function refreshGallery() {
   }
 }
 
+async function refreshImageGallery() {
+  const el = document.getElementById('image-gallery');
+  try {
+    const resp = await fetch(`${API_BASE}/api/images`);
+    if (!resp.ok) return;
+    const data = await resp.json();
+    el.innerHTML = '';
+    if (data.images.length === 0) {
+      el.innerHTML = '<div class="gallery-empty" style="width:100%">No images yet.</div>';
+      return;
+    }
+    data.images.forEach(img => {
+      const thumb = document.createElement('img');
+      thumb.className = 'img-thumb';
+      thumb.src = `${API_BASE}/api/image/${img.filename}`;
+      thumb.title = img.filename;
+      thumb.addEventListener('click', async () => {
+        // Switch to Upload tab and load this image for 3D generation
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+        document.querySelector('[data-tab="tab-upload"]').classList.add('active');
+        document.getElementById('tab-upload').classList.add('active');
+
+        const r = await fetch(`${API_BASE}/api/image/${img.filename}`);
+        const blob = await r.blob();
+        uploadedFile = new File([blob], img.filename, { type: blob.type });
+        document.getElementById('preview-img').src = URL.createObjectURL(blob);
+        document.getElementById('upload-preview').style.display = 'block';
+        document.getElementById('btn-gen').disabled = false;
+      });
+      el.appendChild(thumb);
+    });
+  } catch {}
+}
+
 // ── Server-side generation ──────────────────────────────────────────────
 uploadInput.addEventListener('change', (e) => {
   const file = e.target.files[0];
@@ -988,10 +1035,12 @@ async function pollImagineJob(jobId) {
           const totalTime = job.result.elapsed_seconds + (imgTime || 0);
           imagineStatus.textContent = `Done in ${totalTime.toFixed(1)}s (image ${imgTime?.toFixed(1) || '?'}s + 3D ${job.result.elapsed_seconds.toFixed(1)}s)`;
           refreshGallery();
+          refreshImageGallery();
           loadModelFromUrl(`${API_BASE}/api/output/${job.result.output_file}`, job.result.output_file);
         } else {
           const elapsed = job.image_result?.elapsed_seconds;
           imagineStatus.textContent = `Image generated in ${elapsed ? elapsed.toFixed(1) + 's' : '?'}`;
+          refreshImageGallery();
         }
       } else if (job.status === 'failed') {
         clearInterval(poll); stopTimer();
@@ -1176,6 +1225,7 @@ fetchModels();
 fetchImagineModels();
 fetchModelsFor3dSelect();
 refreshGallery();
+refreshImageGallery();
 </script>
 </body>
 </html>
