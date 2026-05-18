@@ -102,6 +102,7 @@ def load(model_name: str = "playground", low_vram: bool = False,
     from download_model import ensure_downloaded
     ensure_downloaded(info["repo"], log=log)
 
+    log("Loading model into memory (this may take a minute)...")
     cls_name = info["pipeline_class"]
     if cls_name in pipeline_classes:
         pipe = pipeline_classes[cls_name].from_pretrained(info["repo"], torch_dtype=dtype)
@@ -109,8 +110,7 @@ def load(model_name: str = "playground", low_vram: bool = False,
         pipe = DiffusionPipeline.from_pretrained(
             info["repo"], torch_dtype=dtype, trust_remote_code=True
         )
-
-    log("Moving model to GPU...")
+    log("Model loaded, moving to GPU...")
     if low_vram:
         pipe.enable_model_cpu_offload()
     else:

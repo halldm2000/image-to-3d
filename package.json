@@ -1,0 +1,9 @@
+{
+  "name": "image-to-3d",
+  "private": true,
+  "scripts": {
+    "start": "python3 server.py",
+    "setup": "python3 setup.py",
+    "remote": "./connect.sh spark-1"
+  }
+}
