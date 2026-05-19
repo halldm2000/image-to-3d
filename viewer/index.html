@@ -286,6 +286,7 @@
     <button class="btn btn-icon" id="btn-sidebar" title="Toggle gallery">&#9776;</button>
     <div class="sep"></div>
     <label class="btn" for="file-input">Open</label>
+    <button class="btn active" id="btn-textured" title="Textured view">Textured</button>
     <button class="btn" id="btn-wireframe" title="Toggle wireframe">Wireframe</button>
     <button class="btn" id="btn-normals" title="View normals">Normals</button>
     <button class="btn" id="btn-matcap" title="Matcap shading">Matcap</button>
@@ -727,6 +728,7 @@ function applyViewMode(mode) {
 }
 
 function updateViewModeButtons() {
+  document.getElementById('btn-textured').classList.toggle('active', viewMode === 'default');
   document.getElementById('btn-wireframe').classList.toggle('active', viewMode === 'wireframe');
   document.getElementById('btn-normals').classList.toggle('active', viewMode === 'normals');
   document.getElementById('btn-matcap').classList.toggle('active', viewMode === 'matcap');
@@ -1239,6 +1241,7 @@ async function fetchModelsFor3dSelect() {
 }
 
 // ── Toolbar handlers ────────────────────────────────────────────────────
+document.getElementById('btn-textured').addEventListener('click', () => applyViewMode('default'));
 document.getElementById('btn-wireframe').addEventListener('click', () => applyViewMode(viewMode === 'wireframe' ? 'default' : 'wireframe'));
 document.getElementById('btn-normals').addEventListener('click', () => applyViewMode(viewMode === 'normals' ? 'default' : 'normals'));
 document.getElementById('btn-matcap').addEventListener('click', () => applyViewMode(viewMode === 'matcap' ? 'default' : 'matcap'));
