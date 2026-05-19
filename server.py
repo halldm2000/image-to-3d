@@ -167,11 +167,13 @@ async def api_imagine(
     model_3d: str = Form("hunyuan3d"),
 ):
     """Generate an image from text. Optionally chain into 3D generation."""
+    import re as _re
     job_id = str(uuid.uuid4())[:8]
     INPUT_DIR.mkdir(exist_ok=True)
     OUTPUT_DIR.mkdir(exist_ok=True)
 
-    output_image = INPUT_DIR / f"{job_id}_imagined.png"
+    slug = _re.sub(r'[^a-z0-9]+', '-', prompt.lower().strip())[:40].strip('-')
+    output_image = INPUT_DIR / f"{slug}_{job_id}.png"
 
     jobs[job_id] = {
         "id": job_id,
@@ -256,6 +258,12 @@ def _run_imagine(job_id, prompt, output_image, model_name,
 
         jobs[job_id]["image_result"] = result
         jobs[job_id]["image_ready"] = True
+
+        img_meta = {"prompt": prompt, "model": model_name, "seed": seed}
+        try:
+            output_image.with_suffix(".json").write_text(json.dumps(img_meta))
+        except Exception:
+            pass
 
         if not generate_3d:
             jobs[job_id]["status"] = "complete"
@@ -384,6 +392,14 @@ def _run_generation(job_id, input_path, output_path,
 
         job = jobs[job_id]
         source_image = Path(job.get("input", str(input_path))).name
+        prompt = job.get("prompt")
+        if not prompt:
+            img_meta_path = Path(job.get("input", str(input_path))).with_suffix(".json")
+            try:
+                img_meta = json.loads(img_meta_path.read_text()) if img_meta_path.exists() else {}
+                prompt = img_meta.get("prompt")
+            except Exception:
+                pass
         meta = {
             "model": model_name,
             "elapsed_seconds": result.elapsed_seconds,
@@ -393,7 +409,7 @@ def _run_generation(job_id, input_path, output_path,
             "steps": steps,
             "seed": seed,
             "source_image": source_image,
-            "prompt": job.get("prompt"),
+            "prompt": prompt,
         }
         meta_path = output_path.with_suffix(".json")
         try:
