@@ -76,7 +76,11 @@ class Hunyuan3DModel(BaseModel):
             if cfg.seed is not None:
                 gen_kwargs["generator"] = torch.Generator(device="cuda").manual_seed(cfg.seed)
 
-            log("Running shape generation...")
+            log(f"Running shape generation (0/{cfg.steps})...")
+            def _step_cb(pipe, step, timestep, cb_kwargs):
+                log(f"\rShape step {step + 1}/{cfg.steps}")
+                return cb_kwargs
+            gen_kwargs["callback_on_step_end"] = _step_cb
             mesh = self._shape_pipeline(**gen_kwargs)[0]
 
             if not cfg.texture:
