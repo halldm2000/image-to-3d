@@ -1,12 +1,33 @@
+# Server
 fastapi>=0.100.0
 uvicorn>=0.20.0
 python-multipart>=0.0.6
+
+# Core
 Pillow>=10.0.0
 trimesh>=4.0.0
 numpy>=1.24.0
+torchvision
+
+# Preprocessing
 rembg>=2.0.50
+onnxruntime>=1.16.0
+
+# Text-to-image
 diffusers>=0.30.0
 transformers>=4.40.0
 accelerate>=0.30.0
 sentencepiece>=0.2.0
+
+# 3D generation (shared across model backends)
 einops>=0.8.0
+omegaconf
+timm
+pymeshlab
+pygltflib
+xatlas
+opencv-python
+pytorch-lightning
+realesrgan
+basicsr
+fast-simplification

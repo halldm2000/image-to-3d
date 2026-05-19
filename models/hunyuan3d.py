@@ -26,21 +26,30 @@ class Hunyuan3DModel(BaseModel):
     def is_available(self) -> bool:
         return (REPO_DIR / "hy3dshape").is_dir()
 
-    def load(self, low_vram: bool = False):
+    def load(self, low_vram: bool = False, log=None):
+        if log is None:
+            from models.base import _noop_log
+            log = _noop_log
+
         self._ensure_paths()
+
+        log("Importing Hunyuan3D pipeline...")
         from hy3dshape.pipelines import Hunyuan3DDiTFlowMatchingPipeline
 
         kwargs = {}
         if low_vram:
             kwargs["device"] = "cpu"
 
+        log("Loading Hunyuan3D weights (this may take a minute)...")
         self._shape_pipeline = Hunyuan3DDiTFlowMatchingPipeline.from_pretrained(
             MODEL_ID, subfolder="hunyuan3d-dit-v2-1", **kwargs
         )
+        log("Moving model to GPU...")
         if low_vram:
             self._shape_pipeline.to("cuda")
 
         self._low_vram = low_vram
+        log("Hunyuan3D ready")
 
     def generate(self, image_path: Path, output_path: Path,
                  config: GenerationConfig) -> GenerationResult:
@@ -80,8 +89,16 @@ class Hunyuan3DModel(BaseModel):
                 resolution=cfg.texture_resolution,
             )
             paint_pipeline = Hunyuan3DPaintPipeline(paint_config)
-            textured_mesh = paint_pipeline(str(untextured), image_path=str(img_path))
-            textured_mesh.export(str(out_path))
+            result = paint_pipeline(
+                str(untextured), image_path=str(img_path),
+                output_mesh_path=str(out_path), save_glb=True,
+            )
+            if isinstance(result, str):
+                import shutil
+                if str(out_path) != result:
+                    shutil.move(result, str(out_path))
+            else:
+                result.export(str(out_path))
 
         return self._timed_generate(_run, image_path, output_path, config)
 

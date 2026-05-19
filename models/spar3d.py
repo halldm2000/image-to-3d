@@ -27,20 +27,26 @@ class SPAR3DModel(BaseModel):
         except ImportError:
             return False
 
-    def load(self, low_vram: bool = False):
+    def load(self, low_vram: bool = False, log=None):
+        if log is None:
+            from models.base import _noop_log
+            log = _noop_log
         import os
         from spar3d.system import SPAR3D
 
         if low_vram:
             os.environ["SPAR3D_LOW_VRAM"] = "1"
 
+        log("Loading SPAR3D weights...")
         self._model = SPAR3D.from_pretrained(
             MODEL_ID,
             config_name="config.yaml",
             weight_name="model.safetensors",
         )
+        log("Moving model to GPU...")
         self._model.to("cuda")
         self._model.eval()
+        log("SPAR3D ready")
 
     def generate(self, image_path: Path, output_path: Path,
                  config: GenerationConfig) -> GenerationResult:

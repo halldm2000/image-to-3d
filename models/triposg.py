@@ -27,11 +27,17 @@ class TripoSGModel(BaseModel):
         except ImportError:
             return False
 
-    def load(self, low_vram: bool = False):
+    def load(self, low_vram: bool = False, log=None):
+        if log is None:
+            from models.base import _noop_log
+            log = _noop_log
         from triposg.pipelines import TripoSGPipeline
 
+        log("Loading TripoSG weights...")
         self._pipeline = TripoSGPipeline.from_pretrained(MODEL_ID)
+        log("Moving model to GPU...")
         self._pipeline.to("cuda")
+        log("TripoSG ready")
 
     def generate(self, image_path: Path, output_path: Path,
                  config: GenerationConfig) -> GenerationResult:

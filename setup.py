@@ -457,26 +457,33 @@ def step_install_deps(num, total, selected_models):
     status("ok", "PyTorch installed")
 
     # Core deps for the project itself
-    status("wait", "Installing core dependencies (trimesh, Pillow, rembg, fastapi)...")
-    conda_run("pip install trimesh pillow rembg fastapi uvicorn python-multipart")
+    req_file = os.path.join(PROJECT_DIR, "requirements.txt")
+    status("wait", "Installing project dependencies (requirements.txt)...")
+    conda_run(f"pip install -r {req_file}")
 
     for key in selected_models:
         model = MODELS[key]
         if key == "hunyuan3d":
-            req_file = os.path.join(REPO_DIR, "requirements.txt")
+            req_files = [
+                os.path.join(REPO_DIR, "requirements.txt"),
+                os.path.join(REPO_DIR, "hy3dshape", "requirements.txt"),
+            ]
         else:
             repo_name = model["repo"].split("/")[-1].replace(".git", "")
-            req_file = os.path.join(PROJECT_DIR, repo_name, "requirements.txt")
+            req_files = [os.path.join(PROJECT_DIR, repo_name, "requirements.txt")]
 
-        if os.path.isfile(req_file):
-            status("wait", f"Installing {model['name']} requirements...")
-            if conda_run(f"pip install -r {req_file}", cwd=os.path.dirname(req_file)):
-                status("ok", f"{model['name']} requirements installed")
-            else:
-                status("warn", f"Some {model['name']} requirements failed")
-                if not ask("Continue?"):
-                    sys.exit(1)
-        else:
+        for req_file in req_files:
+            if os.path.isfile(req_file):
+                label = os.path.relpath(req_file, PROJECT_DIR)
+                status("wait", f"Installing {model['name']} requirements ({label})...")
+                if conda_run(f"pip install -r {req_file}", cwd=os.path.dirname(req_file)):
+                    status("ok", f"{label} installed")
+                else:
+                    status("warn", f"Some requirements from {label} failed")
+                    if not ask("Continue?"):
+                        sys.exit(1)
+
+        if not any(os.path.isfile(f) for f in req_files):
             status("warn", f"No requirements.txt found for {model['name']}")
 
     # Text-to-image support (FLUX / SDXL)

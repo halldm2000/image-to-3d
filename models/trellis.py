@@ -27,11 +27,17 @@ class TrellisModel(BaseModel):
         except ImportError:
             return False
 
-    def load(self, low_vram: bool = False):
+    def load(self, low_vram: bool = False, log=None):
+        if log is None:
+            from models.base import _noop_log
+            log = _noop_log
         from trellis.pipelines import TrellisImageTo3DPipeline
 
+        log("Loading TRELLIS weights...")
         self._pipeline = TrellisImageTo3DPipeline.from_pretrained(MODEL_ID)
+        log("Moving model to GPU...")
         self._pipeline.cuda()
+        log("TRELLIS ready")
 
     def generate(self, image_path: Path, output_path: Path,
                  config: GenerationConfig) -> GenerationResult:

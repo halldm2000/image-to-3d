@@ -55,7 +55,7 @@ def api_list_images():
                 "size_bytes": img.stat().st_size,
             })
     results.sort(key=lambda x: x["modified"], reverse=True)
-    return {"images": results}
+    return {"images": results, "directory": str(INPUT_DIR.resolve())}
 
 
 @app.get("/api/image/{filename}")
@@ -251,7 +251,8 @@ def _run_imagine(job_id, prompt, output_image, model_name,
 
 @app.post("/api/generate")
 async def api_generate(
-    image: UploadFile = File(...),
+    image: Optional[UploadFile] = File(None),
+    image_filename: Optional[str] = Form(None),
     model: str = Form("hunyuan3d"),
     shape_only: bool = Form(False),
     steps: int = Form(30),
@@ -261,18 +262,27 @@ async def api_generate(
     low_vram: bool = Form(False),
     preprocess: bool = Form(True),
 ):
-    """Upload an image and start 3D generation. Returns a job ID."""
+    """Start 3D generation from an uploaded image or an existing input file."""
     job_id = str(uuid.uuid4())[:8]
 
     INPUT_DIR.mkdir(exist_ok=True)
     OUTPUT_DIR.mkdir(exist_ok=True)
 
-    input_path = INPUT_DIR / f"{job_id}_{image.filename}"
-    with open(input_path, "wb") as f:
-        content = await image.read()
-        f.write(content)
+    if image_filename:
+        input_path = INPUT_DIR / image_filename
+        if not input_path.exists() or not input_path.is_relative_to(INPUT_DIR):
+            raise HTTPException(404, "Image not found in input directory")
+        stem = input_path.stem
+    elif image:
+        input_path = INPUT_DIR / f"{job_id}_{image.filename}"
+        with open(input_path, "wb") as f:
+            content = await image.read()
+            f.write(content)
+        stem = Path(image.filename).stem
+    else:
+        raise HTTPException(400, "Provide either image or image_filename")
 
-    output_path = OUTPUT_DIR / f"{job_id}_{Path(image.filename).stem}.glb"
+    output_path = OUTPUT_DIR / f"{job_id}_{stem}.glb"
 
     jobs[job_id] = {
         "id": job_id,
@@ -331,7 +341,7 @@ def _run_generation(job_id, input_path, output_path,
         m = get_model(model_name)
         from download_progress import track_downloads
         with track_downloads(log):
-            m.load(low_vram=low_vram)
+            m.load(low_vram=low_vram, log=log)
         log("Generating 3D mesh...")
         result = m.generate(input_path, output_path, config)
         log(f"3D generation complete ({result.elapsed_seconds:.1f}s)")
@@ -348,6 +358,8 @@ def _run_generation(job_id, input_path, output_path,
         }
 
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         jobs[job_id]["status"] = "failed"
         jobs[job_id]["error"] = str(e)
 
@@ -449,6 +461,23 @@ def _pid_alive(pid: int) -> bool:
         return True
     except (OSError, ProcessLookupError):
         return False
+
+
+@app.get("/api/open-folder")
+def api_open_folder(path: str):
+    """Open a folder in the system file manager."""
+    folder = Path(path)
+    if not folder.is_dir():
+        raise HTTPException(404, "Directory not found")
+    if not folder.is_relative_to(PROJECT_DIR):
+        raise HTTPException(403, "Path outside project directory")
+    import platform
+    system = platform.system()
+    if system == "Darwin":
+        subprocess.Popen(["open", str(folder)])
+    elif system == "Linux":
+        subprocess.Popen(["xdg-open", str(folder)])
+    return {"opened": str(folder)}
 
 
 @app.get("/api/jobs/{job_id}")

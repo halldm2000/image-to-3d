@@ -3,8 +3,10 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 import time
+
+_noop_log = lambda msg: None
 
 
 @dataclass
@@ -59,7 +61,7 @@ class BaseModel(ABC):
         """Check if this model's dependencies are installed and weights are accessible."""
 
     @abstractmethod
-    def load(self, low_vram: bool = False):
+    def load(self, low_vram: bool = False, log: Callable = _noop_log):
         """Load model weights into memory."""
 
     @abstractmethod

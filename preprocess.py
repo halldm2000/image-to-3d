@@ -6,8 +6,22 @@ import io
 import numpy as np
 
 
+def _ensure_rembg():
+    try:
+        from rembg import remove  # noqa: F401
+        return True
+    except ImportError:
+        import subprocess, sys
+        subprocess.check_call(
+            [sys.executable, "-m", "pip", "install", "rembg", "onnxruntime"],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+        return True
+
+
 def remove_background(image: Image.Image) -> Image.Image:
     """Remove background using rembg, returning RGBA image with transparent bg."""
+    _ensure_rembg()
     from rembg import remove
     output = remove(image)
     return output.convert("RGBA")

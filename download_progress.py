@@ -11,19 +11,23 @@ import time
 from pathlib import Path
 
 
+CACHE_DIRS = [
+    Path.home() / ".cache" / "huggingface" / "hub",
+    Path.home() / ".cache" / "hy3dgen",
+]
+
+
 @contextlib.contextmanager
 def track_downloads(log, repo_id=None):
-    """Monitor HF cache for download progress during from_pretrained().
+    """Monitor cache dirs for download progress during from_pretrained().
 
     Usage:
         with track_downloads(log, repo_id="org/model"):
             pipe = Pipeline.from_pretrained(repo_id)
     """
-    cache_dir = Path.home() / ".cache" / "huggingface" / "hub"
-
     stop = threading.Event()
     thread = threading.Thread(
-        target=_monitor, args=(cache_dir, repo_id, log, stop), daemon=True,
+        target=_monitor, args=(CACHE_DIRS, repo_id, log, stop), daemon=True,
     )
     thread.start()
     try:
@@ -33,7 +37,7 @@ def track_downloads(log, repo_id=None):
         thread.join(timeout=3)
 
 
-def _monitor(cache_dir, repo_id, log, stop):
+def _monitor(cache_dirs, repo_id, log, stop):
     """Watch .incomplete files and report download progress every 2s."""
     tracked = {}   # path -> {start, prev, t0}
     totals = {}    # sha256 hash -> expected total bytes
@@ -42,15 +46,11 @@ def _monitor(cache_dir, repo_id, log, stop):
     if repo_id:
         _fetch_file_info(repo_id, totals, names, log)
 
-    repo_dir = None
-    if repo_id:
-        repo_dir = cache_dir / f"models--{repo_id.replace('/', '--')}" / "blobs"
-
     while not stop.wait(2.0):
-        if repo_dir:
-            incompletes = list(repo_dir.glob("*.incomplete")) if repo_dir.exists() else []
-        else:
-            incompletes = list(cache_dir.rglob("*.incomplete"))
+        incompletes = []
+        for d in cache_dirs:
+            if d.exists():
+                incompletes.extend(d.rglob("*.incomplete"))
 
         for fpath in incompletes:
             try:

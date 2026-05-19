@@ -314,6 +314,7 @@
       </div>
       <div class="form-row"><label>Model</label><select id="gen-model"><option value="hunyuan3d">Hunyuan3D</option><option value="triposr">TripoSR</option><option value="trellis">TRELLIS</option></select></div>
       <div class="form-row"><label>Steps</label><input type="number" id="gen-steps" value="30" min="5" max="50"></div>
+      <div class="form-row"><label></label><input type="checkbox" id="gen-rmbg" checked> <span style="font-size:11px; color:#57534e;">Remove background</span></div>
       <button class="btn-generate" id="btn-gen" disabled>Generate 3D Model</button>
       <div id="gen-status"></div>
     </div>
@@ -321,6 +322,7 @@
 
   <div class="sidebar-section" style="padding-bottom:4px;">
     <h3>Images</h3>
+    <div id="images-dir" style="font-size:10px; color:#a8a29e; margin-top:2px; cursor:pointer; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="Click to copy path"></div>
   </div>
   <div id="image-gallery"></div>
 
@@ -550,6 +552,7 @@ let turntableActive = false;
 let bboxHelper = null;
 let bboxVisible = false;
 let uploadedFile = null;
+let selectedImageFilename = null;
 
 const API_BASE = window.location.origin;
 
@@ -768,6 +771,17 @@ async function refreshImageGallery() {
     const resp = await fetch(`${API_BASE}/api/images`);
     if (!resp.ok) return;
     const data = await resp.json();
+    const dirEl = document.getElementById('images-dir');
+    if (data.directory) {
+      dirEl.textContent = data.directory;
+      dirEl.onclick = () => {
+        navigator.clipboard.writeText(data.directory);
+        fetch(`${API_BASE}/api/open-folder?path=${encodeURIComponent(data.directory)}`);
+        const orig = dirEl.textContent;
+        dirEl.textContent = 'Copied!';
+        setTimeout(() => dirEl.textContent = orig, 1500);
+      };
+    }
     el.innerHTML = '';
     if (data.images.length === 0) {
       el.innerHTML = '<div class="gallery-empty" style="width:100%">No images yet.</div>';
@@ -778,17 +792,15 @@ async function refreshImageGallery() {
       thumb.className = 'img-thumb';
       thumb.src = `${API_BASE}/api/image/${img.filename}`;
       thumb.title = img.filename;
-      thumb.addEventListener('click', async () => {
-        // Switch to Upload tab and load this image for 3D generation
+      thumb.addEventListener('click', () => {
         document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
         document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
         document.querySelector('[data-tab="tab-upload"]').classList.add('active');
         document.getElementById('tab-upload').classList.add('active');
 
-        const r = await fetch(`${API_BASE}/api/image/${img.filename}`);
-        const blob = await r.blob();
-        uploadedFile = new File([blob], img.filename, { type: blob.type });
-        document.getElementById('preview-img').src = URL.createObjectURL(blob);
+        uploadedFile = null;
+        selectedImageFilename = img.filename;
+        document.getElementById('preview-img').src = `${API_BASE}/api/image/${img.filename}`;
         document.getElementById('upload-preview').style.display = 'block';
         document.getElementById('btn-gen').disabled = false;
       });
@@ -802,6 +814,7 @@ uploadInput.addEventListener('change', (e) => {
   const file = e.target.files[0];
   if (!file) return;
   uploadedFile = file;
+  selectedImageFilename = null;
   const preview = document.getElementById('upload-preview');
   const img = document.getElementById('preview-img');
   img.src = URL.createObjectURL(file);
@@ -812,7 +825,7 @@ uploadInput.addEventListener('change', (e) => {
 let genTimerInterval = null;
 
 document.getElementById('btn-gen').addEventListener('click', async () => {
-  if (!uploadedFile) return;
+  if (!uploadedFile && !selectedImageFilename) return;
   const btn = document.getElementById('btn-gen');
   const statusEl = document.getElementById('gen-status');
   btn.disabled = true;
@@ -827,9 +840,14 @@ document.getElementById('btn-gen').addEventListener('click', async () => {
   statusEl.textContent = 'Uploading...';
 
   const form = new FormData();
-  form.append('image', uploadedFile);
+  if (selectedImageFilename) {
+    form.append('image_filename', selectedImageFilename);
+  } else {
+    form.append('image', uploadedFile);
+  }
   form.append('model', document.getElementById('gen-model').value);
   form.append('steps', document.getElementById('gen-steps').value);
+  form.append('preprocess', document.getElementById('gen-rmbg').checked);
 
   try {
     const resp = await fetch(`${API_BASE}/api/generate`, { method: 'POST', body: form });

@@ -27,17 +27,22 @@ class TripoSRModel(BaseModel):
         except ImportError:
             return False
 
-    def load(self, low_vram: bool = False):
+    def load(self, low_vram: bool = False, log=None):
+        if log is None:
+            from models.base import _noop_log
+            log = _noop_log
         from tsr.system import TSR
 
-        device = "cuda"
+        log("Loading TripoSR weights...")
         self._model = TSR.from_pretrained(
             MODEL_ID,
             config_name="config.yaml",
             weight_name="model.ckpt",
         )
         self._model.renderer.set_chunk_size(8192 if not low_vram else 2048)
-        self._model.to(device)
+        log("Moving model to GPU...")
+        self._model.to("cuda")
+        log("TripoSR ready")
 
     def generate(self, image_path: Path, output_path: Path,
                  config: GenerationConfig) -> GenerationResult:
