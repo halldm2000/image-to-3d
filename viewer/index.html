@@ -558,6 +558,7 @@ function setLighting(name) {
   if (activeLightGroup) scene.add(activeLightGroup);
 }
 setLighting('studio');
+loadHDR('studio_small_09');
 
 // ── Grid ────────────────────────────────────────────────────────────────
 const grid = new THREE.GridHelper(10, 20, 0xd6d3d1, 0xe7e5e4);
@@ -573,6 +574,7 @@ let bboxHelper = null;
 let bboxVisible = false;
 let uploadedFile = null;
 let selectedImageFilename = null;
+let activeJobId = null;
 
 const API_BASE = window.location.origin;
 
@@ -943,7 +945,16 @@ async function pollJob(jobId) {
   const statusEl = document.getElementById('gen-status');
   const btn = document.getElementById('btn-gen');
   const logState = { logCount: 0 };
+  activeJobId = jobId;
   showLogPanel();
+
+  function done(msg) {
+    clearInterval(poll);
+    if (genTimerInterval) { clearInterval(genTimerInterval); genTimerInterval = null; }
+    activeJobId = null;
+    statusEl.textContent = msg;
+    btn.disabled = false;
+  }
 
   const poll = setInterval(async () => {
     try {
@@ -952,23 +963,16 @@ async function pollJob(jobId) {
       appendLogs(job, logState);
 
       if (job.status === 'complete') {
-        clearInterval(poll);
-        if (genTimerInterval) { clearInterval(genTimerInterval); genTimerInterval = null; }
-        statusEl.textContent = `Done in ${job.result.elapsed_seconds.toFixed(1)}s`;
-        btn.disabled = false;
+        done(`Done in ${job.result.elapsed_seconds.toFixed(1)}s`);
         refreshGallery();
         loadModelFromUrl(`${API_BASE}/api/output/${job.result.output_file}`, job.result.output_file);
+      } else if (job.status === 'cancelled') {
+        done('Cancelled');
       } else if (job.status === 'failed') {
-        clearInterval(poll);
-        if (genTimerInterval) { clearInterval(genTimerInterval); genTimerInterval = null; }
-        statusEl.textContent = `Failed: ${job.error}`;
-        btn.disabled = false;
+        done(`Failed: ${job.error}`);
       }
     } catch {
-      clearInterval(poll);
-      if (genTimerInterval) { clearInterval(genTimerInterval); genTimerInterval = null; }
-      statusEl.textContent = 'Lost connection to server';
-      btn.disabled = false;
+      done('Lost connection to server');
     }
   }, 2000);
 }
@@ -1105,7 +1109,15 @@ imagineBtn.addEventListener('click', async () => {
 async function pollImagineJob(jobId) {
   let phase = 'generating_image';
   const logState = { logCount: 0 };
+  activeJobId = jobId;
   showLogPanel();
+
+  function done(msg) {
+    clearInterval(poll); stopTimer();
+    activeJobId = null;
+    imagineStatus.textContent = msg;
+    imagineBtn.disabled = false;
+  }
 
   const poll = setInterval(async () => {
     try {
@@ -1123,29 +1135,26 @@ async function pollImagineJob(jobId) {
       } else if (job.status === 'generating_3d') {
         if (phase !== 'generating_3d') { phase = 'generating_3d'; startTimer(imagineStatus, 'Generating 3D model...'); }
       } else if (job.status === 'complete') {
-        clearInterval(poll); stopTimer();
-        imagineBtn.disabled = false;
         if (job.result) {
           const imgTime = job.image_result?.elapsed_seconds;
           const totalTime = job.result.elapsed_seconds + (imgTime || 0);
-          imagineStatus.textContent = `Done in ${totalTime.toFixed(1)}s (image ${imgTime?.toFixed(1) || '?'}s + 3D ${job.result.elapsed_seconds.toFixed(1)}s)`;
+          done(`Done in ${totalTime.toFixed(1)}s (image ${imgTime?.toFixed(1) || '?'}s + 3D ${job.result.elapsed_seconds.toFixed(1)}s)`);
           refreshGallery();
           refreshImageGallery();
           loadModelFromUrl(`${API_BASE}/api/output/${job.result.output_file}`, job.result.output_file);
         } else {
           const elapsed = job.image_result?.elapsed_seconds;
-          imagineStatus.textContent = `Image generated in ${elapsed ? elapsed.toFixed(1) + 's' : '?'}`;
+          done(`Image generated in ${elapsed ? elapsed.toFixed(1) + 's' : '?'}`);
           refreshImageGallery();
         }
+      } else if (job.status === 'cancelled') {
+        done('Cancelled');
+        refreshImageGallery();
       } else if (job.status === 'failed') {
-        clearInterval(poll); stopTimer();
-        imagineStatus.textContent = `Failed: ${job.error}`;
-        imagineBtn.disabled = false;
+        done(`Failed: ${job.error}`);
       }
     } catch {
-      clearInterval(poll); stopTimer();
-      imagineStatus.textContent = 'Lost connection';
-      imagineBtn.disabled = false;
+      done('Lost connection');
     }
   }, 2000);
 }
@@ -1324,6 +1333,13 @@ function showContextMenu(e, items) {
 }
 
 document.addEventListener('click', () => ctxMenu.classList.remove('visible'));
+
+// ── Escape to cancel ────────────────────────────────────────────────
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && activeJobId) {
+    fetch(`${API_BASE}/api/jobs/${activeJobId}/cancel`, { method: 'POST' });
+  }
+});
 
 // ── Render loop ─────────────────────────────────────────────────────────
 function animate() {

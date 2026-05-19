@@ -408,8 +408,12 @@ def _run_generation(job_id, input_path, output_path,
     except Exception as e:
         import traceback
         traceback.print_exc()
-        jobs[job_id]["status"] = "failed"
-        jobs[job_id]["error"] = str(e)
+        if jobs[job_id].get("cancel"):
+            jobs[job_id]["status"] = "cancelled"
+            jobs[job_id]["error"] = "Cancelled by user"
+        else:
+            jobs[job_id]["status"] = "failed"
+            jobs[job_id]["error"] = str(e)
 
 
 DOWNLOAD_STATUS_DIR = PROJECT_DIR / ".download_status"
@@ -538,6 +542,27 @@ def api_job_status(job_id: str):
 @app.get("/api/jobs")
 def api_list_jobs():
     return {"jobs": list(jobs.values())}
+
+
+@app.post("/api/jobs/{job_id}/cancel")
+def api_cancel_job(job_id: str):
+    if job_id not in jobs:
+        raise HTTPException(404, "Job not found")
+    job = jobs[job_id]
+    if job["status"] in ("complete", "failed", "cancelled"):
+        return {"status": job["status"]}
+    job["cancel"] = True
+    model_name = job.get("model") or job.get("model_3d")
+    if model_name:
+        try:
+            from models import get_model
+            m = get_model(model_name)
+            if hasattr(m, "cancel"):
+                m.cancel()
+        except Exception:
+            pass
+    job["status"] = "cancelled"
+    return {"status": "cancelled"}
 
 
 # Serve the viewer at /

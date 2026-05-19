@@ -22,6 +22,7 @@ class Hunyuan3DModel(BaseModel):
     def __init__(self):
         self._shape_pipeline = None
         self._paint_pipeline = None
+        self._cancel = False
 
     def is_available(self) -> bool:
         return (REPO_DIR / "hy3dshape").is_dir()
@@ -54,12 +55,17 @@ class Hunyuan3DModel(BaseModel):
         self._low_vram = low_vram
         log("Hunyuan3D ready")
 
+    def cancel(self):
+        """Request cancellation of the current generation."""
+        self._cancel = True
+
     def generate(self, image_path: Path, output_path: Path,
                  config: GenerationConfig, log=None) -> GenerationResult:
         if log is None:
             from models.base import _noop_log
             log = _noop_log
 
+        self._cancel = False
         self._ensure_paths()
         if self._shape_pipeline is None:
             self.load(low_vram=config.low_vram, log=log)
@@ -77,10 +83,12 @@ class Hunyuan3DModel(BaseModel):
                 gen_kwargs["generator"] = torch.Generator(device="cuda").manual_seed(cfg.seed)
 
             log(f"Running shape generation (0/{cfg.steps})...")
-            def _step_cb(pipe, step, timestep, cb_kwargs):
-                log(f"\rShape step {step + 1}/{cfg.steps}")
-                return cb_kwargs
-            gen_kwargs["callback_on_step_end"] = _step_cb
+            def _step_cb(step_idx, timestep, outputs):
+                if self._cancel:
+                    raise RuntimeError("Generation cancelled")
+                log(f"\rShape step {step_idx + 1}/{cfg.steps}")
+            gen_kwargs["callback"] = _step_cb
+            gen_kwargs["callback_steps"] = 1
             mesh = self._shape_pipeline(**gen_kwargs)[0]
 
             if not cfg.texture:
