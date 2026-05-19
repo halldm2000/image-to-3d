@@ -808,18 +808,22 @@ async function refreshGallery() {
           div.classList.toggle('selected');
           if (selectedModels.has(item.filename)) selectedModels.delete(item.filename);
           else selectedModels.add(item.filename);
-          return;
+        } else {
+          selectedModels.clear();
+          document.querySelectorAll('.gallery-item').forEach(el => el.classList.remove('selected'));
+          selectedModels.add(item.filename);
+          div.classList.add('selected');
         }
-        selectedModels.clear();
-        document.querySelectorAll('.gallery-item').forEach(el => { el.classList.remove('active'); el.classList.remove('selected'); });
+      });
+      div.addEventListener('dblclick', () => {
+        document.querySelectorAll('.gallery-item').forEach(el => el.classList.remove('active'));
         div.classList.add('active');
         loadModelFromUrl(`${API_BASE}/api/${item.path}`, item.filename);
       });
-      div.addEventListener('contextmenu', (e) => {
+      div.oncontextmenu = (e) => {
         e.preventDefault();
         e.stopPropagation();
-        if (!selectedModels.has(item.filename)) selectedModels.add(item.filename);
-        div.classList.add('selected');
+        if (!selectedModels.has(item.filename)) { selectedModels.add(item.filename); div.classList.add('selected'); }
         const targets = [...selectedModels];
         const delLabel = targets.length > 1 ? `Delete ${targets.length} models` : 'Delete model';
         showContextMenu(e, [
@@ -831,7 +835,8 @@ async function refreshGallery() {
           }},
           { label: delLabel, danger: true, action: () => deleteModels(targets) },
         ]);
-      });
+        return false;
+      };
       gallery.appendChild(div);
     });
   } catch {
@@ -875,31 +880,33 @@ async function refreshImageGallery() {
           thumb.classList.toggle('selected');
           if (selectedImages.has(img.filename)) selectedImages.delete(img.filename);
           else selectedImages.add(img.filename);
-          return;
+        } else {
+          selectedImages.clear();
+          document.querySelectorAll('.img-thumb').forEach(t => t.classList.remove('selected'));
+          selectedImages.add(img.filename);
+          thumb.classList.add('selected');
         }
-        selectedImages.clear();
-        document.querySelectorAll('.img-thumb').forEach(t => t.classList.remove('selected'));
-
+      });
+      thumb.addEventListener('dblclick', () => {
         document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
         document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
         document.querySelector('[data-tab="tab-upload"]').classList.add('active');
         document.getElementById('tab-upload').classList.add('active');
-
         uploadedFile = null;
         selectedImageFilename = img.filename;
         document.getElementById('preview-img').src = `${API_BASE}/api/image/${img.filename}`;
         document.getElementById('upload-preview').style.display = 'block';
         document.getElementById('btn-gen').disabled = false;
       });
-      thumb.addEventListener('contextmenu', (e) => {
+      thumb.oncontextmenu = (e) => {
         e.preventDefault();
         e.stopPropagation();
-        if (!selectedImages.has(img.filename)) selectedImages.add(img.filename);
-        thumb.classList.add('selected');
+        if (!selectedImages.has(img.filename)) { selectedImages.add(img.filename); thumb.classList.add('selected'); }
         const targets = [...selectedImages];
         const label = targets.length > 1 ? `Delete ${targets.length} images` : 'Delete image';
         showContextMenu(e, [{ label, danger: true, action: () => deleteImages(targets) }]);
-      });
+        return false;
+      };
       el.appendChild(thumb);
     });
   } catch {}
