@@ -264,7 +264,9 @@ def _run_imagine(job_id, prompt, output_image, model_name,
 
         log("Freeing image model, loading 3D model...")
         jobs[job_id]["status"] = "generating_3d"
-        output_glb = OUTPUT_DIR / f"{job_id}_imagined.glb"
+        import re
+        slug = re.sub(r'[^a-z0-9]+', '-', prompt.lower().strip())[:40].strip('-')
+        output_glb = OUTPUT_DIR / f"{slug}_{job_id}.glb"
         jobs[job_id]["output"] = str(output_glb)
 
         from text_to_image import unload as unload_t2i
@@ -380,6 +382,8 @@ def _run_generation(job_id, input_path, output_path,
         result = m.generate(input_path, output_path, config, log=log)
         log(f"3D generation complete ({result.elapsed_seconds:.1f}s)")
 
+        job = jobs[job_id]
+        source_image = Path(job.get("input", str(input_path))).name
         meta = {
             "model": model_name,
             "elapsed_seconds": result.elapsed_seconds,
@@ -388,6 +392,8 @@ def _run_generation(job_id, input_path, output_path,
             "has_texture": result.has_texture,
             "steps": steps,
             "seed": seed,
+            "source_image": source_image,
+            "prompt": job.get("prompt"),
         }
         meta_path = output_path.with_suffix(".json")
         try:
