@@ -26,6 +26,9 @@ class Hunyuan3DModel(BaseModel):
     def is_available(self) -> bool:
         return (REPO_DIR / "hy3dshape").is_dir()
 
+    def is_loaded(self) -> bool:
+        return self._shape_pipeline is not None
+
     def load(self, low_vram: bool = False, log=None):
         if log is None:
             from models.base import _noop_log
@@ -52,10 +55,14 @@ class Hunyuan3DModel(BaseModel):
         log("Hunyuan3D ready")
 
     def generate(self, image_path: Path, output_path: Path,
-                 config: GenerationConfig) -> GenerationResult:
+                 config: GenerationConfig, log=None) -> GenerationResult:
+        if log is None:
+            from models.base import _noop_log
+            log = _noop_log
+
         self._ensure_paths()
         if self._shape_pipeline is None:
-            self.load(low_vram=config.low_vram)
+            self.load(low_vram=config.low_vram, log=log)
 
         def _run(img_path, out_path, cfg):
             import torch
@@ -69,6 +76,7 @@ class Hunyuan3DModel(BaseModel):
             if cfg.seed is not None:
                 gen_kwargs["generator"] = torch.Generator(device="cuda").manual_seed(cfg.seed)
 
+            log("Running shape generation...")
             mesh = self._shape_pipeline(**gen_kwargs)[0]
 
             if not cfg.texture:
@@ -77,6 +85,7 @@ class Hunyuan3DModel(BaseModel):
 
             untextured = out_path.with_suffix(".untextured.glb")
             mesh.export(str(untextured))
+            log("Shape complete, starting texture painting...")
 
             if self._low_vram:
                 del self._shape_pipeline
@@ -88,17 +97,34 @@ class Hunyuan3DModel(BaseModel):
                 max_num_view=cfg.texture_views,
                 resolution=cfg.texture_resolution,
             )
+            log("Loading texture pipeline...")
             paint_pipeline = Hunyuan3DPaintPipeline(paint_config)
+            log("Painting textures (multiview + UV + inpaint)...")
+            import shutil
             result = paint_pipeline(
                 str(untextured), image_path=str(img_path),
                 output_mesh_path=str(out_path), save_glb=True,
             )
-            if isinstance(result, str):
-                import shutil
-                if str(out_path) != result:
+
+            # The paint pipeline writes OBJ to output_mesh_path and saves
+            # the actual GLB as "textured_mesh.glb" in a nearby directory.
+            glb_found = False
+            for candidate in [
+                out_path.parent / "textured_mesh.glb",
+                Path.cwd() / "textured_mesh.glb",
+            ]:
+                if candidate.exists():
+                    shutil.move(str(candidate), str(out_path))
+                    glb_found = True
+                    break
+
+            if not glb_found:
+                if isinstance(result, str) and str(out_path) != result:
                     shutil.move(result, str(out_path))
-            else:
-                result.export(str(out_path))
+                elif not isinstance(result, str):
+                    result.export(str(out_path))
+
+            log("Texturing complete")
 
         return self._timed_generate(_run, image_path, output_path, config)
 

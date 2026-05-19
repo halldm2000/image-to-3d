@@ -73,6 +73,8 @@ def api_list_outputs():
     OUTPUT_DIR.mkdir(exist_ok=True)
     results = []
     for glb in sorted(OUTPUT_DIR.glob("**/*.glb"), key=lambda p: p.stat().st_mtime, reverse=True):
+        if ".untextured." in glb.name:
+            continue
         meta_path = glb.with_suffix(".json")
         meta = {}
         if meta_path.exists():
@@ -107,6 +109,35 @@ def api_get_output_subdir(subdir: str, filename: str):
     if not path.exists() or not path.is_relative_to(OUTPUT_DIR):
         raise HTTPException(404, "File not found")
     return FileResponse(path, media_type="model/gltf-binary", filename=filename)
+
+
+@app.delete("/api/output/{filename}")
+def api_delete_output(filename: str):
+    """Delete a generated .glb and its associated files."""
+    path = OUTPUT_DIR / filename
+    if not path.is_relative_to(OUTPUT_DIR):
+        raise HTTPException(400, "Invalid path")
+    if not path.exists():
+        raise HTTPException(404, "File not found")
+    stem = path.stem
+    deleted = []
+    for f in OUTPUT_DIR.iterdir():
+        if f.stem == stem or f.name.startswith(stem + "."):
+            f.unlink()
+            deleted.append(f.name)
+    return {"deleted": deleted}
+
+
+@app.delete("/api/image/{filename}")
+def api_delete_image(filename: str):
+    """Delete an image from the input directory."""
+    path = INPUT_DIR / filename
+    if not path.is_relative_to(INPUT_DIR):
+        raise HTTPException(400, "Invalid path")
+    if not path.exists():
+        raise HTTPException(404, "Image not found")
+    path.unlink()
+    return {"deleted": filename}
 
 
 @app.get("/api/imagine/models")
@@ -337,15 +368,32 @@ def _run_generation(job_id, input_path, output_path,
             except ImportError:
                 log("Skipping preprocessing (rembg not installed)")
 
-        log(f"Loading 3D model: {model_name}...")
         m = get_model(model_name)
-        from download_progress import track_downloads
-        with track_downloads(log):
-            m.load(low_vram=low_vram, log=log)
+        if m.is_loaded():
+            log(f"Using already-loaded model: {model_name}")
+        else:
+            log(f"Loading 3D model: {model_name}...")
+            from download_progress import track_downloads
+            with track_downloads(log):
+                m.load(low_vram=low_vram, log=log)
         log("Generating 3D mesh...")
-        result = m.generate(input_path, output_path, config)
+        result = m.generate(input_path, output_path, config, log=log)
         log(f"3D generation complete ({result.elapsed_seconds:.1f}s)")
-        m.unload()
+
+        meta = {
+            "model": model_name,
+            "elapsed_seconds": result.elapsed_seconds,
+            "vertex_count": result.vertex_count,
+            "face_count": result.face_count,
+            "has_texture": result.has_texture,
+            "steps": steps,
+            "seed": seed,
+        }
+        meta_path = output_path.with_suffix(".json")
+        try:
+            meta_path.write_text(json.dumps(meta))
+        except Exception:
+            pass
 
         jobs[job_id]["status"] = "complete"
         jobs[job_id]["completed"] = datetime.now().isoformat()

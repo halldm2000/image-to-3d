@@ -40,7 +40,7 @@ class TripoSGModel(BaseModel):
         log("TripoSG ready")
 
     def generate(self, image_path: Path, output_path: Path,
-                 config: GenerationConfig) -> GenerationResult:
+                 config: GenerationConfig, log=None) -> GenerationResult:
         if self._pipeline is None:
             self.load(low_vram=config.low_vram)
 

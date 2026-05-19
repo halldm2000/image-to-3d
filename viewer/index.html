@@ -65,6 +65,7 @@
   }
   .gallery-item:hover { background: rgba(196,86,33,0.06); }
   .gallery-item.active { background: rgba(196,86,33,0.1); border: 1px solid rgba(196,86,33,0.25); }
+  .gallery-item.selected { background: rgba(59,130,246,0.1); border: 1px solid rgba(59,130,246,0.35); }
   .gallery-item .name { font-size: 12px; color: #2d2926; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .gallery-item .meta { font-size: 10px; color: #78716c; }
 
@@ -76,6 +77,7 @@
     border: 2px solid transparent; transition: border-color 0.15s;
   }
   .img-thumb:hover { border-color: #c45621; }
+  .img-thumb.selected { border-color: #3b82f6; background: rgba(59,130,246,0.15); }
 
   /* ── Generate panel ─────────────────────────────────────────── */
   #generate-panel {
@@ -252,9 +254,27 @@
   .setting-row select { padding: 3px 6px; background: #fff; border: 1px solid rgba(120,113,108,0.2); border-radius: 4px; color: #2d2926; font-size: 11px; }
   .setting-row select option { background: #fff; }
   .setting-row input[type="range"] { width: 80px; }
+
+  /* ── Context menu ──────────────────────────────────────────── */
+  .ctx-menu {
+    position: fixed; z-index: 500; display: none;
+    background: rgba(255, 252, 248, 0.98); backdrop-filter: blur(12px);
+    border: 1px solid rgba(120,113,108,0.2); border-radius: 6px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.12); padding: 4px 0; min-width: 140px;
+  }
+  .ctx-menu.visible { display: block; }
+  .ctx-menu-item {
+    padding: 6px 14px; font-size: 12px; color: #2d2926; cursor: pointer;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .ctx-menu-item:hover { background: rgba(196,86,33,0.08); }
+  .ctx-menu-item.danger { color: #c43a21; }
+  .ctx-menu-item.danger:hover { background: rgba(196,58,33,0.1); }
 </style>
 </head>
 <body>
+
+<div class="ctx-menu" id="ctx-menu"></div>
 
 <!-- Header -->
 <div id="header">
@@ -730,7 +750,22 @@ function takeScreenshot() {
   link.click();
 }
 
-// ── Gallery ─────────────────────────────────────────────────────────────
+// ── Gallery (with multi-select + right-click delete) ───────────────────
+let selectedModels = new Set();
+let selectedImages = new Set();
+
+async function deleteModels(filenames) {
+  await Promise.all(filenames.map(f => fetch(`${API_BASE}/api/output/${f}`, { method: 'DELETE' })));
+  selectedModels.clear();
+  refreshGallery();
+}
+
+async function deleteImages(filenames) {
+  await Promise.all(filenames.map(f => fetch(`${API_BASE}/api/image/${f}`, { method: 'DELETE' })));
+  selectedImages.clear();
+  refreshImageGallery();
+}
+
 async function refreshGallery() {
   try {
     const resp = await fetch(`${API_BASE}/api/outputs`);
@@ -739,13 +774,17 @@ async function refreshGallery() {
 
     if (data.outputs.length === 0) {
       gallery.innerHTML = '<div class="gallery-empty">No models yet.</div>';
+      selectedModels.clear();
       return;
     }
+
+    const validNames = new Set(data.outputs.map(o => o.filename));
+    for (const s of selectedModels) { if (!validNames.has(s)) selectedModels.delete(s); }
 
     gallery.innerHTML = '';
     data.outputs.forEach(item => {
       const div = document.createElement('div');
-      div.className = 'gallery-item';
+      div.className = 'gallery-item' + (selectedModels.has(item.filename) ? ' selected' : '');
       const model = item.metadata?.model || '?';
       const time = item.metadata?.elapsed_seconds;
       const timeStr = time ? ` | ${time.toFixed(1)}s` : '';
@@ -753,10 +792,26 @@ async function refreshGallery() {
         <span class="name">${item.filename}</span>
         <span class="meta">${formatBytes(item.size_bytes)} | ${model}${timeStr}</span>
       `;
-      div.addEventListener('click', () => {
-        document.querySelectorAll('.gallery-item').forEach(el => el.classList.remove('active'));
+      div.addEventListener('click', (e) => {
+        if (e.shiftKey) {
+          div.classList.toggle('selected');
+          if (selectedModels.has(item.filename)) selectedModels.delete(item.filename);
+          else selectedModels.add(item.filename);
+          return;
+        }
+        selectedModels.clear();
+        document.querySelectorAll('.gallery-item').forEach(el => { el.classList.remove('active'); el.classList.remove('selected'); });
         div.classList.add('active');
         loadModelFromUrl(`${API_BASE}/api/${item.path}`, item.filename);
+      });
+      div.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (!selectedModels.has(item.filename)) selectedModels.add(item.filename);
+        div.classList.add('selected');
+        const targets = [...selectedModels];
+        const label = targets.length > 1 ? `Delete ${targets.length} models` : 'Delete model';
+        showContextMenu(e, [{ label, danger: true, action: () => deleteModels(targets) }]);
       });
       gallery.appendChild(div);
     });
@@ -782,6 +837,10 @@ async function refreshImageGallery() {
         setTimeout(() => dirEl.textContent = orig, 1500);
       };
     }
+
+    const validNames = new Set(data.images.map(i => i.filename));
+    for (const s of selectedImages) { if (!validNames.has(s)) selectedImages.delete(s); }
+
     el.innerHTML = '';
     if (data.images.length === 0) {
       el.innerHTML = '<div class="gallery-empty" style="width:100%">No images yet.</div>';
@@ -789,10 +848,19 @@ async function refreshImageGallery() {
     }
     data.images.forEach(img => {
       const thumb = document.createElement('img');
-      thumb.className = 'img-thumb';
+      thumb.className = 'img-thumb' + (selectedImages.has(img.filename) ? ' selected' : '');
       thumb.src = `${API_BASE}/api/image/${img.filename}`;
       thumb.title = img.filename;
-      thumb.addEventListener('click', () => {
+      thumb.addEventListener('click', (e) => {
+        if (e.shiftKey) {
+          thumb.classList.toggle('selected');
+          if (selectedImages.has(img.filename)) selectedImages.delete(img.filename);
+          else selectedImages.add(img.filename);
+          return;
+        }
+        selectedImages.clear();
+        document.querySelectorAll('.img-thumb').forEach(t => t.classList.remove('selected'));
+
         document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
         document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
         document.querySelector('[data-tab="tab-upload"]').classList.add('active');
@@ -803,6 +871,15 @@ async function refreshImageGallery() {
         document.getElementById('preview-img').src = `${API_BASE}/api/image/${img.filename}`;
         document.getElementById('upload-preview').style.display = 'block';
         document.getElementById('btn-gen').disabled = false;
+      });
+      thumb.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (!selectedImages.has(img.filename)) selectedImages.add(img.filename);
+        thumb.classList.add('selected');
+        const targets = [...selectedImages];
+        const label = targets.length > 1 ? `Delete ${targets.length} images` : 'Delete image';
+        showContextMenu(e, [{ label, danger: true, action: () => deleteImages(targets) }]);
       });
       el.appendChild(thumb);
     });
@@ -1228,6 +1305,25 @@ window.addEventListener('resize', onResize);
 const params = new URLSearchParams(window.location.search);
 const modelParam = params.get('model');
 if (modelParam) loadModelFromUrl(modelParam, modelParam.split('/').pop());
+
+// ── Context menu ────────────────────────────────────────────────────
+const ctxMenu = document.getElementById('ctx-menu');
+
+function showContextMenu(e, items) {
+  ctxMenu.innerHTML = '';
+  items.forEach(({ label, danger, action }) => {
+    const el = document.createElement('div');
+    el.className = 'ctx-menu-item' + (danger ? ' danger' : '');
+    el.textContent = label;
+    el.addEventListener('click', (ce) => { ce.stopPropagation(); ctxMenu.classList.remove('visible'); action(); });
+    ctxMenu.appendChild(el);
+  });
+  ctxMenu.style.left = Math.min(e.clientX, window.innerWidth - 160) + 'px';
+  ctxMenu.style.top = Math.min(e.clientY, window.innerHeight - 40 * items.length) + 'px';
+  ctxMenu.classList.add('visible');
+}
+
+document.addEventListener('click', () => ctxMenu.classList.remove('visible'));
 
 // ── Render loop ─────────────────────────────────────────────────────────
 function animate() {

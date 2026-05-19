@@ -49,7 +49,7 @@ class SPAR3DModel(BaseModel):
         log("SPAR3D ready")
 
     def generate(self, image_path: Path, output_path: Path,
-                 config: GenerationConfig) -> GenerationResult:
+                 config: GenerationConfig, log=None) -> GenerationResult:
         if self._model is None:
             self.load(low_vram=config.low_vram)
 

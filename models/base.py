@@ -60,13 +60,17 @@ class BaseModel(ABC):
     def is_available(self) -> bool:
         """Check if this model's dependencies are installed and weights are accessible."""
 
+    def is_loaded(self) -> bool:
+        """Return True if model weights are currently in memory."""
+        return False
+
     @abstractmethod
     def load(self, low_vram: bool = False, log: Callable = _noop_log):
         """Load model weights into memory."""
 
     @abstractmethod
     def generate(self, image_path: Path, output_path: Path,
-                 config: GenerationConfig) -> GenerationResult:
+                 config: GenerationConfig, log: Callable = _noop_log) -> GenerationResult:
         """Run inference: image → 3D mesh file."""
 
     def unload(self):
