@@ -101,28 +101,19 @@ class Hunyuan3DModel(BaseModel):
             paint_pipeline = Hunyuan3DPaintPipeline(paint_config)
             log("Painting textures (multiview + UV + inpaint)...")
             import shutil
-            result = paint_pipeline(
+
+            # Paint pipeline writes OBJ to output_mesh_path, then converts
+            # to GLB via .replace(".obj", ".glb") — so we must pass an .obj path.
+            obj_out = out_path.with_suffix(".obj")
+            paint_pipeline(
                 str(untextured), image_path=str(img_path),
-                output_mesh_path=str(out_path), save_glb=True,
+                output_mesh_path=str(obj_out), save_glb=True,
             )
 
-            # The paint pipeline writes OBJ to output_mesh_path and saves
-            # the actual GLB as "textured_mesh.glb" in a nearby directory.
-            glb_found = False
-            for candidate in [
-                out_path.parent / "textured_mesh.glb",
-                Path.cwd() / "textured_mesh.glb",
-            ]:
-                if candidate.exists():
-                    shutil.move(str(candidate), str(out_path))
-                    glb_found = True
-                    break
-
-            if not glb_found:
-                if isinstance(result, str) and str(out_path) != result:
-                    shutil.move(result, str(out_path))
-                elif not isinstance(result, str):
-                    result.export(str(out_path))
+            glb_from_pipeline = obj_out.with_suffix(".glb")
+            if glb_from_pipeline.exists():
+                shutil.move(str(glb_from_pipeline), str(out_path))
+            obj_out.unlink(missing_ok=True)
 
             log("Texturing complete")
 
