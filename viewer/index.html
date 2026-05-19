@@ -775,8 +775,9 @@ function cleanDisplayName(filename, meta, modified) {
     const p = meta.prompt;
     return p.length > 40 ? p.slice(0, 40) + '...' : p;
   }
-  let name = filename.replace(/\.glb$/i, '');
-  name = name.replace(/_?imagined$/i, '');
+  const src = meta.source_image || filename;
+  let name = src.replace(/\.[^.]+$/, '');
+  name = name.replace(/_?imagined/gi, '').replace(/_?preprocessed/gi, '');
   name = name.replace(/\b[0-9a-f]{8}\b/g, '');
   name = name.replace(/[-_]+/g, ' ').trim();
   if (!name) {
