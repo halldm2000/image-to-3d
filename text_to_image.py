@@ -49,6 +49,14 @@ MODELS = {
         "default_guidance": 3.0,
         "min_vram_gb": 8,
     },
+    "sana": {
+        "repo": "Efficient-Large-Model/SANA1.5_1.6B_1024px",
+        "description": "Sana 1.5 — NVIDIA research, very efficient 1.6B DiT",
+        "pipeline_class": "SanaPipeline",
+        "default_steps": 18,
+        "default_guidance": 5.0,
+        "min_vram_gb": 6,
+    },
 }
 
 _noop_log = lambda msg: None
@@ -96,6 +104,11 @@ def load(model_name: str = "playground", low_vram: bool = False,
         "FluxPipeline": FluxPipeline,
         "StableDiffusionXLPipeline": StableDiffusionXLPipeline,
     }
+    try:
+        from diffusers import SanaPipeline
+        pipeline_classes["SanaPipeline"] = SanaPipeline
+    except ImportError:
+        pass
 
     log(f"Loading {info['description'].split('—')[0].strip()}...")
 
